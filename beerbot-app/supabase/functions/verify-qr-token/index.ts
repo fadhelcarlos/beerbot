@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verify as verifyJwt } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
+import { enforceRateLimit } from "../_shared/rate-limit.ts";
 
 interface QrPayload {
   order_id: string;
@@ -17,6 +18,7 @@ interface OrderRow {
   tap_id: string;
   status: string;
   qr_code_token: string | null;
+  qr_expires_at: string | null;
 }
 
 Deno.serve(async (req) => {
@@ -71,6 +73,10 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Rate limit: max 20 verify attempts per minute per user
+    const rateLimitResp = enforceRateLimit(user.id, "verify-qr-token", 20, 60_000);
+    if (rateLimitResp) return rateLimitResp;
+
     // Parse request body
     const body = await req.json();
     const token: string | undefined = body.qr_token;
@@ -114,7 +120,7 @@ Deno.serve(async (req) => {
     // Fetch the order and validate it matches the token
     const { data: order, error: orderError } = await supabaseAdmin
       .from("orders")
-      .select("id, user_id, venue_id, tap_id, status, qr_code_token")
+      .select("id, user_id, venue_id, tap_id, status, qr_code_token, qr_expires_at")
       .eq("id", payload.order_id)
       .single();
 
@@ -140,6 +146,19 @@ Deno.serve(async (req) => {
           code: "TOKEN_MISMATCH",
         }),
         { status: 401, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Cross-check qr_expires_at — even if JWT exp is valid, the DB expiry may have passed
+    // (e.g., a new QR was generated for the same order, invalidating the old one)
+    if (orderRow.qr_expires_at && new Date(orderRow.qr_expires_at) < new Date()) {
+      return new Response(
+        JSON.stringify({
+          valid: false,
+          error: "QR code has expired",
+          code: "QR_EXPIRED",
+        }),
+        { status: 410, headers: { "Content-Type": "application/json" } },
       );
     }
 
@@ -181,12 +200,16 @@ Deno.serve(async (req) => {
     }
 
     // Mark the order as redeemed (single-use: status change prevents reuse)
-    const { error: updateError } = await supabaseAdmin
+    // Use count option to verify exactly one row was updated (race condition guard)
+    const { error: updateError, count: updateCount } = await supabaseAdmin
       .from("orders")
-      .update({
-        status: "redeemed",
-        redeemed_at: new Date().toISOString(),
-      })
+      .update(
+        {
+          status: "redeemed",
+          redeemed_at: new Date().toISOString(),
+        },
+        { count: "exact" },
+      )
       .eq("id", payload.order_id)
       .eq("status", "ready_to_redeem"); // Optimistic lock: only update if still ready_to_redeem
 
@@ -199,6 +222,18 @@ Deno.serve(async (req) => {
           code: "UPDATE_FAILED",
         }),
         { status: 500, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // If no rows were updated, a concurrent request already redeemed this order
+    if (updateCount === 0) {
+      return new Response(
+        JSON.stringify({
+          valid: false,
+          error: "Order has already been redeemed",
+          code: "ALREADY_REDEEMED",
+        }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
       );
     }
 

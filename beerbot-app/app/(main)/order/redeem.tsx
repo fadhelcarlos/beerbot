@@ -59,9 +59,19 @@ function getStepIndex(status: OrderStatus): number {
 
 function useCountdown(expiresAt: string | null) {
   const [remaining, setRemaining] = useState<number | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!expiresAt) return;
+    // Always clear any existing interval first (handles expiresAt changing)
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    if (!expiresAt) {
+      setRemaining(null);
+      return;
+    }
 
     function calcRemaining() {
       const diff = new Date(expiresAt!).getTime() - Date.now();
@@ -70,13 +80,21 @@ function useCountdown(expiresAt: string | null) {
 
     setRemaining(calcRemaining());
 
-    const interval = setInterval(() => {
+    intervalRef.current = setInterval(() => {
       const secs = calcRemaining();
       setRemaining(secs);
-      if (secs <= 0) clearInterval(interval);
+      if (secs <= 0 && intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
     }, 1000);
 
-    return () => clearInterval(interval);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
   }, [expiresAt]);
 
   return remaining;
@@ -179,6 +197,7 @@ export default function RedeemScreen() {
   const [venueId, setVenueId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [qrTimedOut, setQrTimedOut] = useState(false);
 
   const originalBrightness = useRef<number | null>(null);
   const previousStatusRef = useRef<OrderStatus | null>(null);
@@ -284,6 +303,15 @@ export default function RedeemScreen() {
       }
     };
   }, []);
+
+  // QR generation timeout — if QR data isn't ready within 15s, show error
+  useEffect(() => {
+    if (qrData || screenState !== 'loading') return;
+    const timeout = setTimeout(() => {
+      if (!qrData) setQrTimedOut(true);
+    }, 15000);
+    return () => clearTimeout(timeout);
+  }, [qrData, screenState]);
 
   // Load order data, generate QR token, fetch enrichment data
   useEffect(() => {
@@ -688,9 +716,21 @@ export default function RedeemScreen() {
           <View className="bg-white rounded-3xl p-6">
             {qrData ? (
               <QRCode value={qrData} size={240} />
+            ) : qrTimedOut ? (
+              <View className="w-60 h-60 items-center justify-center">
+                <Text className="text-red-500 text-base font-semibold text-center">
+                  Failed to generate QR code
+                </Text>
+                <Text className="text-gray-500 text-sm text-center mt-2">
+                  Please go back and try again
+                </Text>
+              </View>
             ) : (
               <View className="w-60 h-60 items-center justify-center">
                 <ActivityIndicator color="#1a1a2e" />
+                <Text className="text-gray-500 text-xs mt-2">
+                  Generating QR code...
+                </Text>
               </View>
             )}
           </View>

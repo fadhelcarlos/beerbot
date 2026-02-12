@@ -68,12 +68,17 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const qrSecret = Deno.env.get("QR_TOKEN_SECRET")!;
+    const plcApiKey = Deno.env.get("PLC_API_KEY");
 
-    // Verify the caller is using the service-role key
+    // Verify the caller using a dedicated PLC API key (preferred) or service-role key (fallback)
     const providedKey = authHeader.replace("Bearer ", "");
-    if (providedKey !== supabaseServiceKey) {
+    const isValidKey = plcApiKey
+      ? providedKey === plcApiKey
+      : providedKey === supabaseServiceKey;
+
+    if (!isValidKey) {
       return new Response(
-        JSON.stringify({ error: "Service-role authentication required" }),
+        JSON.stringify({ error: "Authentication required" }),
         { status: 403, headers: { "Content-Type": "application/json" } },
       );
     }

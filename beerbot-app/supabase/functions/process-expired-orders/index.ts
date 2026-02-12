@@ -162,7 +162,7 @@ async function processRefund(
     // Issue full refund via Stripe using the payment intent ID
     const refund = await stripe.refunds.create({
       payment_intent: order.stripe_payment_intent_id!,
-      reason: "requested_by_customer",
+      reason: "requested_by_merchant",
     });
 
     // On successful refund: update order status to 'refunded'

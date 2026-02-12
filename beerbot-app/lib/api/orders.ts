@@ -17,11 +17,17 @@ import type {
 export async function createOrder(
   request: CreateOrderRequest,
 ): Promise<CreateOrderResponse> {
+  // Generate a client-side idempotency key to prevent duplicate orders from double-tap
+  const idempotencyKey = `order_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
   const { data, error } = await supabase.functions.invoke<CreateOrderResponse>(
     'create-order',
     {
       method: 'POST',
       body: request,
+      headers: {
+        'Idempotency-Key': idempotencyKey,
+      },
     },
   );
 

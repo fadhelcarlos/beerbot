@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { enforceRateLimit } from "../_shared/rate-limit.ts";
 
 interface CreateOrderBody {
   tap_id: string;
@@ -71,6 +72,10 @@ Deno.serve(async (req) => {
         headers: { "Content-Type": "application/json" },
       });
     }
+
+    // Rate limit: max 5 order creation attempts per minute per user
+    const rateLimitResp = enforceRateLimit(user.id, "create-order", 5, 60_000);
+    if (rateLimitResp) return rateLimitResp;
 
     // Parse request body
     const body: CreateOrderBody = await req.json();

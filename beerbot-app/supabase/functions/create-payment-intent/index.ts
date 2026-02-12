@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@14?target=deno";
+import { enforceRateLimit } from "../_shared/rate-limit.ts";
 
 interface OrderRow {
   id: string;
@@ -70,6 +71,10 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Rate limit: max 10 payment intent attempts per minute per user
+    const rateLimitResp = enforceRateLimit(user.id, "create-payment-intent", 10, 60_000);
+    if (rateLimitResp) return rateLimitResp;
 
     // Parse request body
     const { order_id } = await req.json();

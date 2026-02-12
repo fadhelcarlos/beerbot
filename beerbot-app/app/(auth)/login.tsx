@@ -111,16 +111,21 @@ export default function LoginScreen() {
         return;
       }
 
-      // Biometric passed — Supabase session is already persisted in SecureStore
-      // by the Supabase client. Try refreshing the existing session.
-      const { data, error: refreshError } = await supabase.auth.getSession();
+      // Biometric passed — refresh the persisted session to ensure it's valid
+      // and the auth store is synced before navigating.
+      const { data: refreshData, error: refreshError } =
+        await supabase.auth.refreshSession();
 
-      if (refreshError || !data.session) {
+      if (refreshError || !refreshData.session) {
         // Session expired or not found — fall back to manual login
         setError('Session expired. Please log in with your email and password.');
         setIsLoading(false);
         return;
       }
+
+      // Session is refreshed and auth store listener will pick it up.
+      // Small delay to let the onAuthStateChange listener sync the Zustand store.
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Session is valid — navigate to main
       router.replace('/(main)/venues');

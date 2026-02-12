@@ -71,14 +71,30 @@ Deno.serve(async (req) => {
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     // Idempotency check: skip if this event ID was already processed
-    const { count: existingCount } = await supabaseAdmin
-      .from("order_events")
-      .select("id", { count: "exact", head: true })
-      .eq("event_type", `stripe_${event.type}`)
-      .filter("metadata->>stripe_event_id", "eq", event.id);
+    // Uses dedicated idempotency table with unique constraint on stripe_event_id
+    const { data: existing } = await supabaseAdmin
+      .from("webhook_idempotency")
+      .select("stripe_event_id")
+      .eq("stripe_event_id", event.id)
+      .maybeSingle();
 
-    if (existingCount && existingCount > 0) {
-      // Already processed this event — return 200 to acknowledge
+    if (existing) {
+      return new Response(
+        JSON.stringify({ received: true, duplicate: true }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Record this event ID before processing (prevents concurrent duplicates)
+    const { error: idempotencyError } = await supabaseAdmin
+      .from("webhook_idempotency")
+      .insert({
+        stripe_event_id: event.id,
+        event_type: event.type,
+      });
+
+    if (idempotencyError) {
+      // Unique constraint violation means another request is already processing
       return new Response(
         JSON.stringify({ received: true, duplicate: true }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -211,22 +227,12 @@ async function handlePaymentFailed(
     .update({ status: "cancelled" })
     .eq("id", orderId);
 
-  // Restore oz_remaining on the tap (read-then-write since Supabase JS
-  // doesn't support SET oz_remaining = oz_remaining + X directly)
+  // Restore oz_remaining on the tap atomically via RPC
   const restoreOz = orderRow.quantity * orderRow.pour_size_oz;
-  const { data: tap } = await supabaseAdmin
-    .from("taps")
-    .select("oz_remaining")
-    .eq("id", orderRow.tap_id)
-    .single();
-
-  if (tap) {
-    const newOz = Number(tap.oz_remaining) + restoreOz;
-    await supabaseAdmin
-      .from("taps")
-      .update({ oz_remaining: newOz })
-      .eq("id", orderRow.tap_id);
-  }
+  await supabaseAdmin.rpc("restore_tap_inventory", {
+    p_tap_id: orderRow.tap_id,
+    p_oz_to_restore: restoreOz,
+  });
 
   // Log payment failed event
   await supabaseAdmin.from("order_events").insert({

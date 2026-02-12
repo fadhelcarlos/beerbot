@@ -19,6 +19,7 @@ import {
   savePushToken,
 } from '@/lib/notifications';
 import OfflineBanner from '@/components/OfflineBanner';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 // Sync TanStack Query online status with NetInfo
 onlineManager.setEventListener((setOnline) => {
@@ -170,22 +171,24 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 export default function RootLayout() {
   return (
-    <StripeProvider
-      publishableKey={getStripePublishableKey()}
-      merchantIdentifier="merchant.com.beerbot.app"
-      urlScheme="beerbot"
-    >
-      <QueryClientProvider client={queryClient}>
-        <StatusBar style="light" />
-        <View style={{ flex: 1 }} className="bg-dark">
-          <OfflineBanner />
-          <View style={{ flex: 1 }}>
-            <AuthGate>
-              <Stack screenOptions={{ headerShown: false }} />
-            </AuthGate>
+    <ErrorBoundary>
+      <StripeProvider
+        publishableKey={getStripePublishableKey()}
+        merchantIdentifier="merchant.com.beerbot.app"
+        urlScheme="beerbot"
+      >
+        <QueryClientProvider client={queryClient}>
+          <StatusBar style="light" />
+          <View style={{ flex: 1 }} className="bg-dark">
+            <OfflineBanner />
+            <View style={{ flex: 1 }}>
+              <AuthGate>
+                <Stack screenOptions={{ headerShown: false }} />
+              </AuthGate>
+            </View>
           </View>
-        </View>
-      </QueryClientProvider>
-    </StripeProvider>
+        </QueryClientProvider>
+      </StripeProvider>
+    </ErrorBoundary>
   );
 }

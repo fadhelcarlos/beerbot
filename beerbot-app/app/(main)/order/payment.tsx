@@ -55,6 +55,8 @@ export default function PaymentScreen() {
   const realtimeChannelRef = useRef<RealtimeChannel | null>(null);
   const statusPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const inventoryChannelRef = useRef<RealtimeChannel | null>(null);
+  const pollingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const payFallbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryClient = useQueryClient();
 
   const qty = Number(quantity ?? '1');
@@ -269,7 +271,7 @@ export default function PaymentScreen() {
     }, 3000);
 
     // Stop polling after 30s
-    setTimeout(() => {
+    pollingTimeoutRef.current = setTimeout(() => {
       if (statusPollRef.current) {
         cleanupPolling();
         if (paymentState === 'checking_status') {
@@ -286,6 +288,14 @@ export default function PaymentScreen() {
     if (statusPollRef.current) {
       clearInterval(statusPollRef.current);
       statusPollRef.current = null;
+    }
+    if (pollingTimeoutRef.current) {
+      clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = null;
+    }
+    if (payFallbackTimeoutRef.current) {
+      clearTimeout(payFallbackTimeoutRef.current);
+      payFallbackTimeoutRef.current = null;
     }
   }
 
@@ -350,7 +360,7 @@ export default function PaymentScreen() {
       // Payment sheet completed — wait for webhook confirmation via realtime
       // The realtime subscription will handle navigation to QR screen
       // Set a fallback timeout in case realtime is slow
-      setTimeout(() => {
+      payFallbackTimeoutRef.current = setTimeout(() => {
         if (!hasNavigated.current && paymentState !== 'success') {
           startStatusPolling();
         }

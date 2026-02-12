@@ -23,7 +23,6 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 
 const MIN_QUANTITY = 1;
 const MAX_QUANTITY = 6;
-const LOW_INVENTORY_THRESHOLD_OZ = 24; // Alert if oz_remaining drops below this during viewing
 
 // ─────────────────────────────────────────────────
 // Availability Badge (reused pattern from beer list)
@@ -51,8 +50,8 @@ function AvailabilityBadge({
       );
     case 'out':
       return (
-        <View className="bg-white/10 rounded-full px-2.5 py-0.5">
-          <Text className="text-xs font-semibold text-white/40">Out</Text>
+        <View className="bg-red-500/20 rounded-full px-2.5 py-0.5">
+          <Text className="text-xs font-semibold text-red-400/70">Sold Out</Text>
         </View>
       );
   }
@@ -243,21 +242,34 @@ export default function OrderConfigureScreen() {
     };
   }, [venueId, queryClient]);
 
-  // Watch for inventory drop below threshold — alert and navigate back
+  // Watch for inventory drop — alert and navigate back when beer becomes unavailable
+  const previousAvailabilityRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!tap || hasNavigatedAway.current) return;
 
-    if (tap.availability_status === 'out') {
+    const prev = previousAvailabilityRef.current;
+    previousAvailabilityRef.current = tap.availability_status;
+
+    // Only alert on transitions (not on initial load)
+    if (prev === null) return;
+
+    if (tap.availability_status === 'out' && prev !== 'out') {
       hasNavigatedAway.current = true;
       Alert.alert(
         'Beer Unavailable',
-        `${beer?.name ?? 'This beer'} is no longer available. Returning to the beer list.`,
+        'This beer is no longer available for mobile ordering.',
         [{ text: 'OK', onPress: () => router.back() }],
       );
-    } else if (tap.oz_remaining < LOW_INVENTORY_THRESHOLD_OZ && tap.availability_status === 'low') {
-      // Only alert once — check is implicit via the ref guard
+    } else if (tap.availability_status === 'low' && prev === 'available') {
+      hasNavigatedAway.current = true;
+      Alert.alert(
+        'Beer Unavailable',
+        'This beer is no longer available for mobile ordering.',
+        [{ text: 'OK', onPress: () => router.back() }],
+      );
     }
-  }, [tap, beer?.name, router]);
+  }, [tap, router]);
 
   // Quantity handlers
   const handleDecrement = useCallback(() => {
@@ -434,11 +446,18 @@ export default function OrderConfigureScreen() {
         className="absolute bottom-0 left-0 right-0 px-6 bg-dark border-t border-dark-600"
         style={{ paddingBottom: insets.bottom + 12, paddingTop: 12 }}
       >
+        {tap.availability_status === 'low' && (
+          <View className="mb-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-2.5">
+            <Text className="text-sm text-yellow-400 text-center">
+              Limited stock {'\u2014'} order directly at the station
+            </Text>
+          </View>
+        )}
         <Pressable
           onPress={handleContinue}
-          disabled={tap.availability_status === 'out' || !tap.temp_ok}
+          disabled={tap.availability_status !== 'available' || !tap.temp_ok}
           className={`w-full items-center justify-center rounded-2xl py-4 ${
-            tap.availability_status !== 'out' && tap.temp_ok
+            tap.availability_status === 'available' && tap.temp_ok
               ? 'bg-brand active:opacity-80'
               : 'bg-brand/40'
           }`}

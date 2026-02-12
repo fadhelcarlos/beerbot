@@ -10,15 +10,15 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
-import { useQuery } from '@tanstack/react-query';
-import { fetchVenueTaps } from '@/lib/api/venues';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { fetchVenueTaps, subscribeTaps } from '@/lib/api/venues';
 import { createOrder, getOrder } from '@/lib/api/orders';
 import {
   initializePaymentSheet,
   presentPayment,
 } from '@/lib/api/payments';
 import { supabase } from '@/lib/supabase';
-import type { Order, TapWithBeer } from '@/types/api';
+import type { Order, Tap, TapWithBeer } from '@/types/api';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 type PaymentState =
@@ -52,9 +52,69 @@ export default function PaymentScreen() {
   const isPayingRef = useRef(false);
   const realtimeChannelRef = useRef<RealtimeChannel | null>(null);
   const statusPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inventoryChannelRef = useRef<RealtimeChannel | null>(null);
+  const queryClient = useQueryClient();
 
   const qty = Number(quantity ?? '1');
   const displayTotal = totalPrice ?? '0.00';
+
+  // Monitor inventory changes — alert if beer becomes unavailable before payment
+  useEffect(() => {
+    if (!venueId || !tapId) return;
+
+    inventoryChannelRef.current = subscribeTaps(venueId, (updatedTap: Tap) => {
+      if (updatedTap.id !== tapId) return;
+
+      // Update the shared query cache
+      queryClient.setQueryData<TapWithBeer[]>(
+        ['venue-taps', venueId],
+        (prev) => {
+          if (!prev) return prev;
+          return prev.map((t) => {
+            if (t.id !== updatedTap.id) return t;
+            const ozRemaining = updatedTap.oz_remaining;
+            const lowThreshold = updatedTap.low_threshold_oz;
+            let availabilityStatus: TapWithBeer['availability_status'] =
+              'available';
+            if (ozRemaining <= 0) availabilityStatus = 'out';
+            else if (ozRemaining <= lowThreshold)
+              availabilityStatus = 'low';
+
+            return {
+              ...t,
+              ...updatedTap,
+              beer: t.beer,
+              price_12oz: t.price_12oz,
+              availability_status: availabilityStatus,
+            };
+          });
+        },
+      );
+
+      // Check if beer is no longer available for mobile ordering
+      const ozRemaining = updatedTap.oz_remaining;
+      const lowThreshold = updatedTap.low_threshold_oz;
+      const isUnavailable = ozRemaining <= 0 || ozRemaining <= lowThreshold;
+
+      if (isUnavailable && !hasNavigated.current) {
+        hasNavigated.current = true;
+        cleanupPolling();
+        Alert.alert(
+          'Beer Unavailable',
+          'This beer is no longer available for mobile ordering.',
+          [{
+            text: 'OK',
+            onPress: () => router.replace(`/(main)/venues/${venueId}` as `/(main)/venues/${string}`),
+          }],
+        );
+      }
+    });
+
+    return () => {
+      inventoryChannelRef.current?.unsubscribe();
+      inventoryChannelRef.current = null;
+    };
+  }, [venueId, tapId, queryClient, router]);
 
   // Fetch tap data for order summary display
   const tapsQuery = useQuery({

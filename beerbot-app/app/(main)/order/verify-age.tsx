@@ -10,13 +10,16 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { WebView } from 'react-native-webview';
 import type { WebViewNavigation } from 'react-native-webview';
 import {
   checkVerificationStatus,
   createVerificationSession,
 } from '@/lib/api/verification';
+import { subscribeTaps } from '@/lib/api/venues';
+import type { Tap, TapWithBeer } from '@/types/api';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 const MAX_ATTEMPTS = 3;
 
@@ -64,6 +67,65 @@ export default function VerifyAgeScreen() {
   const [failureReason, setFailureReason] = useState('');
   const webviewRef = useRef<WebView>(null);
   const hasNavigated = useRef(false);
+  const queryClient = useQueryClient();
+  const inventoryChannelRef = useRef<RealtimeChannel | null>(null);
+
+  // Monitor inventory changes via realtime subscription
+  useEffect(() => {
+    if (!venueId || !tapId) return;
+
+    inventoryChannelRef.current = subscribeTaps(venueId, (updatedTap: Tap) => {
+      if (updatedTap.id !== tapId) return;
+
+      // Update the shared query cache
+      queryClient.setQueryData<TapWithBeer[]>(
+        ['venue-taps', venueId],
+        (prev) => {
+          if (!prev) return prev;
+          return prev.map((t) => {
+            if (t.id !== updatedTap.id) return t;
+            const ozRemaining = updatedTap.oz_remaining;
+            const lowThreshold = updatedTap.low_threshold_oz;
+            let availabilityStatus: TapWithBeer['availability_status'] =
+              'available';
+            if (ozRemaining <= 0) availabilityStatus = 'out';
+            else if (ozRemaining <= lowThreshold)
+              availabilityStatus = 'low';
+
+            return {
+              ...t,
+              ...updatedTap,
+              beer: t.beer,
+              price_12oz: t.price_12oz,
+              availability_status: availabilityStatus,
+            };
+          });
+        },
+      );
+
+      // Check if beer is no longer available for mobile ordering
+      const ozRemaining = updatedTap.oz_remaining;
+      const lowThreshold = updatedTap.low_threshold_oz;
+      const isUnavailable = ozRemaining <= 0 || ozRemaining <= lowThreshold;
+
+      if (isUnavailable && !hasNavigated.current) {
+        hasNavigated.current = true;
+        Alert.alert(
+          'Beer Unavailable',
+          'This beer is no longer available for mobile ordering.',
+          [{
+            text: 'OK',
+            onPress: () => router.replace(`/(main)/venues/${venueId}` as `/(main)/venues/${string}`),
+          }],
+        );
+      }
+    });
+
+    return () => {
+      inventoryChannelRef.current?.unsubscribe();
+      inventoryChannelRef.current = null;
+    };
+  }, [venueId, tapId, queryClient, router]);
 
   // Forward params for the payment screen (memoized to avoid dependency churn)
   const orderParams = useMemo(

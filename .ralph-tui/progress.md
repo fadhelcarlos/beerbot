@@ -969,3 +969,38 @@ after each iteration and it's included in prompts for context.
   - Expo Router auto-discovers `profile/payment-methods.tsx` as a child route of the `profile` tab — no additional layout configuration needed
 ---
 
+## 2026-02-11 - US-027
+- What was implemented:
+  - Updated beer list `app/(main)/venues/[id].tsx`:
+    - Changed 'Out' badge to 'Sold Out' with red-tinted styling (`bg-red-500/20`, `text-red-400/70`) instead of greyed-out white
+  - Updated order configure screen `app/(main)/order/configure.tsx`:
+    - 'Continue' CTA now disabled when beer is 'Low' (not just 'out' and '!temp_ok') — only enabled when `availability_status === 'available' && temp_ok`
+    - Added "Limited stock — order directly at the station" warning message above CTA when beer is 'Low'
+    - Changed 'Out' badge to 'Sold Out' (consistent with beer list)
+    - Improved inventory watchdog: tracks availability transitions via `previousAvailabilityRef` — on transition to 'out' or from 'available' to 'low', shows modal alert "This beer is no longer available for mobile ordering" and navigates back to beer list
+    - Removed unused `LOW_INVENTORY_THRESHOLD_OZ` constant
+  - Added inventory monitoring to verify-age screen `app/(main)/order/verify-age.tsx`:
+    - Added Supabase realtime subscription on taps table via `subscribeTaps()` for live inventory tracking during age verification
+    - Updates shared TanStack Query cache with tap changes (same merge pattern as beer list/configure)
+    - If beer becomes unavailable (low or out), shows modal alert and navigates to beer list via `router.replace()`
+    - Proper cleanup of realtime channel on unmount
+  - Added inventory monitoring to payment screen `app/(main)/order/payment.tsx`:
+    - Added Supabase realtime subscription on taps table for live inventory tracking during payment flow
+    - Updates shared TanStack Query cache with tap changes
+    - If beer becomes unavailable before payment completes, shows modal alert, cleans up polling, and navigates to beer list via `router.replace()`
+    - Proper cleanup of realtime channel on unmount
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `app/(main)/venues/[id].tsx` — 'Sold Out' badge styling for out beers
+  - `app/(main)/order/configure.tsx` — Low stock CTA blocking, message, improved inventory watchdog
+  - `app/(main)/order/verify-age.tsx` — added realtime inventory monitoring with alert + navigation
+  - `app/(main)/order/payment.tsx` — added realtime inventory monitoring with alert + navigation
+- **Learnings:**
+  - For inventory drop detection during order flow, the same `subscribeTaps(venueId, callback)` pattern works across all screens — each screen filters for the specific `tapId` in the callback
+  - Using `previousAvailabilityRef` to track availability transitions prevents false alerts on initial mount — only fire alerts when the status actually changes
+  - `router.replace()` with typed routes for dynamic segments requires a type assertion: `as \`/(main)/venues/\${string}\`` — same pattern established in US-022
+  - Inventory availability checks for mobile ordering should block both 'low' and 'out' states — 'low' means stock should be reserved for in-person orders at the station
+  - When adding realtime subscriptions to multiple screens in the same flow, each manages its own channel lifecycle via refs and useEffect cleanup — no shared subscription manager needed since Supabase handles channel deduplication by name
+---
+

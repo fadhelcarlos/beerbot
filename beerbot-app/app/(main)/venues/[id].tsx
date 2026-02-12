@@ -55,8 +55,8 @@ function AvailabilityBadge({
       );
     case 'out':
       return (
-        <View className="bg-white/10 rounded-full px-2.5 py-0.5">
-          <Text className="text-xs font-semibold text-white/40">Out</Text>
+        <View className="bg-red-500/20 rounded-full px-2.5 py-0.5">
+          <Text className="text-xs font-semibold text-red-400/70">Sold Out</Text>
         </View>
       );
   }

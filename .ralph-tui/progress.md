@@ -889,3 +889,33 @@ after each iteration and it's included in prompts for context.
   - The reorder button checks tap availability via a separate TanStack Query that's only enabled when the order is not active — prevents unnecessary API calls for in-progress orders
 ---
 
+## 2026-02-11 - US-025
+- What was implemented:
+  - Created `app/(main)/profile/index.tsx` — full Profile screen with account management:
+    - User info card with avatar (initials circle), full name, email, and verification status badge (green "Verified" or yellow "Unverified")
+    - Inline "Edit Profile" form: change name with save/cancel buttons; email shown as read-only with "changes require confirmation" note
+    - "Age Verification" section: shows verified status with date, or "Not yet verified" with navigation to verify-age screen
+    - "Payment Methods" link (navigates to placeholder alert — future feature)
+    - "Order History" link navigates to `/(main)/orders`
+    - "Sign Out" button with confirmation dialog, calls `supabase.auth.signOut()`, clears TanStack Query cache, AuthGate handles redirect to welcome
+    - "Delete Account" option with double confirmation dialogs, invokes `delete-account` Edge Function, then signs out
+    - App version number at bottom from `expo-constants` (`Constants.expoConfig?.version`)
+    - Sectioned menu layout with dividers and emoji icons
+    - BeerBot dark theme, FadeIn/FadeInDown staggered entrance animations, safe area insets
+  - Updated `app/(main)/_layout.tsx`:
+    - Added "Profile" tab (person emoji icon) to bottom tab navigation as third tab
+    - Refactored `TabIcon` to use a `TAB_ICONS` record map instead of hardcoded ternary
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes (0 errors, 0 warnings)
+- Files changed:
+  - `app/(main)/profile/index.tsx` — full profile screen with account management (new)
+  - `app/(main)/_layout.tsx` — added Profile tab to bottom tabs
+- **Learnings:**
+  - `Constants.expoConfig?.version` from `expo-constants` reads the `version` field from `app.json` at runtime — this is the simplest way to display app version without hardcoding
+  - For inline edit forms within a profile screen, toggling visibility with state is simpler and more natural than navigating to a separate screen — the `FadeInDown` animation on toggle gives a smooth UX
+  - Supabase `.from('users').update()` with `.eq('id', userId)` respects RLS (users can only update their own row) — also update `auth.updateUser({ data })` to sync `raw_user_meta_data` for consistency
+  - `queryClient.clear()` on sign out removes all cached data from TanStack Query — prevents stale user data from being shown to the next user
+  - When adding a new tab to Expo Router `Tabs`, the directory must exist with at least an `index.tsx` — Expo Router auto-discovers routes from the file system
+  - The `TAB_ICONS` record pattern is cleaner than nested ternaries when the tab bar has 3+ tabs
+---
+

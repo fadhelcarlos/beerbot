@@ -774,3 +774,39 @@ after each iteration and it's included in prompts for context.
   - When importing multiple named exports from the same module, combine them into a single import statement to avoid `import/no-duplicates` lint warnings
 ---
 
+## 2026-02-11 - US-022
+- What was implemented:
+  - Enhanced `app/(main)/order/redeem.tsx` with real-time order status updates and animations:
+    - Supabase realtime subscription on orders table (`postgres_changes` UPDATE, filtered by `id=eq.${orderId}`) for live status updates
+    - Visual status stepper/progress bar: Paid -> Ready -> Scanned -> Pouring -> Complete with color-coded circles, checkmarks for completed steps, connector lines, and current step highlighting
+    - Each status step highlights as order progresses through states via `StatusStepper` component
+    - `pouring` state: transitions screen to animated pouring state with Lottie beer pour animation (looping glass fill with stream, foam, and bubbles)
+    - `completed` state: celebration Lottie animation (beer mug with radiating stars/dots), "Enjoy your beer!" message
+    - `expired` state: expiration message with "You have not been charged" confirmation in green-bordered card, plus "A full refund will be processed automatically"
+    - Haptic feedback on every status change via `expo-haptics`: `NotificationFeedbackType.Success` for completed, `NotificationFeedbackType.Error` for expired, `ImpactFeedbackStyle.Medium` for all other transitions
+    - Stepper pulse animation on status change using `withSequence(withSpring(1.05), withSpring(1))`
+    - "Done" button on completed state navigates back to venue beer menu (`/(main)/venues/${venueId}`)
+    - Realtime channel cleanup on unmount via `supabase.removeChannel(channel)` in useEffect return
+    - Screen state machine: loading -> ready -> pouring -> completed (or expired/error)
+    - Correctly handles initial load of orders already in pouring/completed/expired states
+  - Created `assets/pouring-animation.json` — Lottie animation: beer glass filling with amber liquid, foam, bubbles, and pouring stream
+  - Created `assets/celebration-animation.json` — Lottie animation: beer mug with celebratory stars and dots radiating outward
+  - Installed `expo-haptics` package
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes (0 errors, 0 warnings)
+- Files changed:
+  - `app/(main)/order/redeem.tsx` — enhanced with realtime subscription, status stepper, animations, haptics (rewritten)
+  - `assets/pouring-animation.json` — Lottie pouring animation (new)
+  - `assets/celebration-animation.json` — Lottie celebration animation (new)
+  - `package.json` — added `expo-haptics` dependency
+- **Learnings:**
+  - `expo-haptics` provides three feedback types: `impactAsync` (light/medium/heavy), `notificationAsync` (success/warning/error), and `selectionAsync` — use notification types for meaningful status events (success for completed, error for expired)
+  - Supabase `removeChannel(channel)` is the correct cleanup for realtime subscriptions — it both unsubscribes and removes the channel from the client's internal tracking
+  - For order status tracking, a `previousStatusRef` (useRef) avoids duplicate status change handling — comparing against the ref prevents re-triggering haptics/animations when the same status arrives multiple times via realtime
+  - `withSequence(withSpring(1.05, {damping: 8}), withSpring(1, {damping: 12}))` creates a subtle but noticeable pulse effect for the status stepper when steps advance
+  - Lottie animations can be hand-authored as JSON for simple shapes — `sr` (star), `el` (ellipse), `rc` (rectangle) shape types with keyframed transforms, opacity, and size give good visual results
+  - The `completed` screen "Done" button should navigate to the venue beer menu (not just venues list) for better UX — use `router.replace(\`/(main)/venues/\${venueId}\`)` with stored venue ID
+  - Expo Router typed routes with dynamic segments require a type assertion: `as \`/(main)/venues/\${string}\`` to satisfy TypeScript
+  - `expo-haptics` does not require an `app.json` plugin entry — it works out of the box with Expo SDK 54
+---
+

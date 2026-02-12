@@ -9,17 +9,45 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withSequence,
+} from 'react-native-reanimated';
 import * as Brightness from 'expo-brightness';
+import * as Haptics from 'expo-haptics';
 import { useKeepAwake } from 'expo-keep-awake';
 import QRCode from 'react-native-qrcode-svg';
+import LottieView from 'lottie-react-native';
 import { getOrder } from '@/lib/api/orders';
 import { generateQrToken, generateQrDataString } from '@/lib/utils/qr';
 import { fetchVenue } from '@/lib/api/venues';
 import { supabase } from '@/lib/supabase';
-import type { Order } from '@/types/api';
+import type { Order, OrderStatus } from '@/types/api';
 
-type ScreenState = 'loading' | 'ready' | 'expired' | 'error';
+// ─────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────
+
+type ScreenState = 'loading' | 'ready' | 'pouring' | 'completed' | 'expired' | 'error';
+
+// Status stepper steps — the visual pipeline
+const ORDER_STEPS: { key: OrderStatus; label: string }[] = [
+  { key: 'paid', label: 'Paid' },
+  { key: 'ready_to_redeem', label: 'Ready' },
+  { key: 'redeemed', label: 'Scanned' },
+  { key: 'pouring', label: 'Pouring' },
+  { key: 'completed', label: 'Complete' },
+];
+
+function getStepIndex(status: OrderStatus): number {
+  const idx = ORDER_STEPS.findIndex((s) => s.key === status);
+  return idx >= 0 ? idx : -1;
+}
 
 // ─────────────────────────────────────────────────
 // Countdown Timer Hook
@@ -58,6 +86,75 @@ function formatCountdown(seconds: number | null): string {
 }
 
 // ─────────────────────────────────────────────────
+// Status Stepper Component
+// ─────────────────────────────────────────────────
+
+function StatusStepper({ currentStatus }: { currentStatus: OrderStatus }) {
+  const currentIndex = getStepIndex(currentStatus);
+
+  return (
+    <View className="flex-row items-center justify-between px-2">
+      {ORDER_STEPS.map((step, i) => {
+        const isActive = i <= currentIndex;
+        const isCurrent = i === currentIndex;
+        const isLast = i === ORDER_STEPS.length - 1;
+
+        return (
+          <View key={step.key} className="flex-row items-center flex-1">
+            {/* Step circle */}
+            <View className="items-center">
+              <View
+                className={`w-8 h-8 rounded-full items-center justify-center ${
+                  isCurrent
+                    ? 'bg-brand'
+                    : isActive
+                      ? 'bg-brand/60'
+                      : 'bg-dark-600'
+                }`}
+              >
+                {isActive ? (
+                  <Text
+                    className={`text-xs font-bold ${
+                      isCurrent ? 'text-dark' : 'text-dark/70'
+                    }`}
+                  >
+                    {'\u2713'}
+                  </Text>
+                ) : (
+                  <Text className="text-xs text-white/30">{i + 1}</Text>
+                )}
+              </View>
+              <Text
+                className={`text-[10px] mt-1 text-center ${
+                  isCurrent
+                    ? 'text-brand font-bold'
+                    : isActive
+                      ? 'text-white/60'
+                      : 'text-white/30'
+                }`}
+              >
+                {step.label}
+              </Text>
+            </View>
+
+            {/* Connector line */}
+            {!isLast && (
+              <View className="flex-1 mx-1">
+                <View
+                  className={`h-0.5 ${
+                    i < currentIndex ? 'bg-brand/60' : 'bg-dark-600'
+                  }`}
+                />
+              </View>
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────
 // Main Screen
 // ─────────────────────────────────────────────────
 
@@ -75,12 +172,64 @@ export default function RedeemScreen() {
   const [tapNumber, setTapNumber] = useState<number | null>(null);
   const [beerName, setBeerName] = useState<string | null>(null);
   const [venueName, setVenueName] = useState<string | null>(null);
+  const [venueId, setVenueId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [detailsExpanded, setDetailsExpanded] = useState(false);
 
   const originalBrightness = useRef<number | null>(null);
+  const previousStatusRef = useRef<OrderStatus | null>(null);
+  const lottieRef = useRef<LottieView>(null);
 
   const remaining = useCountdown(order?.expires_at ?? null);
+
+  // Animated values for status transitions
+  const stepperPulse = useSharedValue(1);
+
+  const stepperPulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: stepperPulse.value }],
+  }));
+
+  // Trigger haptic feedback on status change
+  const triggerHaptic = useCallback(async (status: OrderStatus) => {
+    try {
+      if (status === 'completed') {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else if (status === 'expired') {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } else {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+    } catch {
+      // Haptics may not be available in simulator
+    }
+  }, []);
+
+  // Handle order status transitions
+  const handleStatusChange = useCallback(
+    (newStatus: OrderStatus) => {
+      if (previousStatusRef.current === newStatus) return;
+      previousStatusRef.current = newStatus;
+
+      // Trigger haptic
+      triggerHaptic(newStatus);
+
+      // Pulse the stepper
+      stepperPulse.value = withSequence(
+        withSpring(1.05, { damping: 8 }),
+        withSpring(1, { damping: 12 }),
+      );
+
+      // Transition screen state
+      if (newStatus === 'pouring') {
+        setScreenState('pouring');
+      } else if (newStatus === 'completed') {
+        setScreenState('completed');
+      } else if (newStatus === 'expired') {
+        setScreenState('expired');
+      }
+    },
+    [triggerHaptic, stepperPulse],
+  );
 
   // Auto-maximize screen brightness on mount, restore on unmount
   useEffect(() => {
@@ -119,6 +268,17 @@ export default function RedeemScreen() {
         const orderData = await getOrder(orderId!);
         if (cancelled) return;
         setOrder(orderData);
+        setVenueId(orderData.venue_id);
+        previousStatusRef.current = orderData.status;
+
+        // Determine initial screen state from existing order status
+        if (orderData.status === 'pouring') {
+          setScreenState('pouring');
+        } else if (orderData.status === 'completed') {
+          setScreenState('completed');
+        } else if (orderData.status === 'expired') {
+          setScreenState('expired');
+        }
 
         // Step 2: Ensure QR token exists
         let token = orderData.qr_code_token;
@@ -156,7 +316,14 @@ export default function RedeemScreen() {
         if (cancelled) return;
         if (venueData) setVenueName(venueData.name);
 
-        setScreenState('ready');
+        // Only set to 'ready' if not already in a terminal/pouring state
+        if (
+          orderData.status !== 'pouring' &&
+          orderData.status !== 'completed' &&
+          orderData.status !== 'expired'
+        ) {
+          setScreenState('ready');
+        }
       } catch (err) {
         if (cancelled) return;
         setErrorMessage(
@@ -172,14 +339,50 @@ export default function RedeemScreen() {
     };
   }, [orderId]);
 
-  // Watch for expiration
+  // Subscribe to realtime order status changes
+  useEffect(() => {
+    if (!orderId) return;
+
+    const channel = supabase
+      .channel(`order-status-${orderId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'orders',
+          filter: `id=eq.${orderId}`,
+        },
+        (payload) => {
+          const updatedOrder = payload.new as Order;
+          setOrder(updatedOrder);
+          handleStatusChange(updatedOrder.status);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [orderId, handleStatusChange]);
+
+  // Watch for timer-based expiration
   useEffect(() => {
     if (remaining === 0 && screenState === 'ready') {
       setScreenState('expired');
+      triggerHaptic('expired');
     }
-  }, [remaining, screenState]);
+  }, [remaining, screenState, triggerHaptic]);
 
   const handleDone = useCallback(() => {
+    if (venueId) {
+      router.replace(`/(main)/venues/${venueId}` as `/(main)/venues/${string}`);
+    } else {
+      router.replace('/(main)/venues');
+    }
+  }, [router, venueId]);
+
+  const handleBackToVenues = useCallback(() => {
     router.replace('/(main)/venues');
   }, [router]);
 
@@ -224,7 +427,7 @@ export default function RedeemScreen() {
         </View>
         <View className="px-6">
           <Pressable
-            onPress={handleDone}
+            onPress={handleBackToVenues}
             className="w-full items-center justify-center rounded-2xl py-4 bg-dark-600 active:opacity-80"
           >
             <Text className="text-lg font-bold text-white">
@@ -250,17 +453,24 @@ export default function RedeemScreen() {
           <Animated.View entering={FadeIn.duration(400)} className="items-center">
             <Text className="text-5xl">{'\u23F0'}</Text>
             <Text className="text-white text-xl font-bold mt-6 text-center">
-              QR Code Expired
+              Order Expired
             </Text>
             <Text className="text-white/50 text-base mt-3 text-center leading-6">
-              Your redemption window has closed. A refund will be processed
-              automatically.
+              Your redemption window has closed.
             </Text>
+            <View className="mt-5 bg-green-900/30 rounded-xl px-5 py-3 border border-green-500/30">
+              <Text className="text-green-400 text-sm font-semibold text-center">
+                You have not been charged
+              </Text>
+              <Text className="text-green-400/60 text-xs text-center mt-1">
+                A full refund will be processed automatically
+              </Text>
+            </View>
           </Animated.View>
         </View>
         <View className="px-6">
           <Pressable
-            onPress={handleDone}
+            onPress={handleBackToVenues}
             className="w-full items-center justify-center rounded-2xl py-4 bg-brand active:opacity-80"
           >
             <Text className="text-lg font-bold text-dark">
@@ -273,7 +483,110 @@ export default function RedeemScreen() {
   }
 
   // ─────────────────────────────────────────────────
-  // Render: Ready State (main QR screen)
+  // Render: Pouring State
+  // ─────────────────────────────────────────────────
+
+  if (screenState === 'pouring') {
+    return (
+      <View
+        className="flex-1 bg-dark"
+        style={{ paddingTop: insets.top, paddingBottom: insets.bottom + 16 }}
+      >
+        {/* Status Stepper */}
+        <Animated.View
+          style={stepperPulseStyle}
+          className="mx-6 mt-6"
+        >
+          <StatusStepper currentStatus={order?.status ?? 'pouring'} />
+        </Animated.View>
+
+        <View className="flex-1 items-center justify-center px-8">
+          <Animated.View entering={FadeIn.duration(600)} className="items-center">
+            <View className="w-56 h-56">
+              <LottieView
+                ref={lottieRef}
+                source={require('@/assets/pouring-animation.json')}
+                autoPlay
+                loop
+                style={{ width: '100%', height: '100%' }}
+              />
+            </View>
+            <Animated.Text
+              entering={FadeInUp.delay(200).duration(400)}
+              className="text-2xl font-bold text-brand mt-4 text-center"
+            >
+              Pouring your beer...
+            </Animated.Text>
+            <Animated.Text
+              entering={FadeInUp.delay(400).duration(400)}
+              className="text-base text-white/50 mt-2 text-center"
+            >
+              {beerName ?? 'Your beer'} from Tap #{tapNumber ?? '?'}
+            </Animated.Text>
+          </Animated.View>
+        </View>
+      </View>
+    );
+  }
+
+  // ─────────────────────────────────────────────────
+  // Render: Completed State
+  // ─────────────────────────────────────────────────
+
+  if (screenState === 'completed') {
+    return (
+      <View
+        className="flex-1 bg-dark"
+        style={{ paddingTop: insets.top, paddingBottom: insets.bottom + 16 }}
+      >
+        {/* Status Stepper */}
+        <Animated.View
+          style={stepperPulseStyle}
+          className="mx-6 mt-6"
+        >
+          <StatusStepper currentStatus="completed" />
+        </Animated.View>
+
+        <View className="flex-1 items-center justify-center px-8">
+          <Animated.View entering={FadeIn.duration(600)} className="items-center">
+            <View className="w-48 h-48">
+              <LottieView
+                source={require('@/assets/celebration-animation.json')}
+                autoPlay
+                loop={false}
+                style={{ width: '100%', height: '100%' }}
+              />
+            </View>
+            <Animated.Text
+              entering={FadeInUp.delay(200).duration(400)}
+              className="text-3xl font-bold text-brand mt-4 text-center"
+            >
+              Enjoy your beer!
+            </Animated.Text>
+            <Animated.Text
+              entering={FadeInUp.delay(400).duration(400)}
+              className="text-base text-white/50 mt-2 text-center"
+            >
+              {beerName ?? 'Your beer'} is ready. Cheers!
+            </Animated.Text>
+          </Animated.View>
+        </View>
+
+        {/* Done button */}
+        <View className="px-6">
+          <Pressable
+            onPress={handleDone}
+            className="w-full items-center justify-center rounded-2xl py-4 bg-brand active:opacity-80"
+          >
+            <Text className="text-lg font-bold text-dark">Done</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  // ─────────────────────────────────────────────────
+  // Render: Ready State (main QR screen with stepper)
   // ─────────────────────────────────────────────────
 
   const isLow = remaining != null && remaining <= 120;
@@ -284,10 +597,19 @@ export default function RedeemScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
+        {/* Status Stepper */}
         <Animated.View
           entering={FadeInDown.delay(50).duration(350)}
-          className="mx-6 mt-6 items-center"
+          style={stepperPulseStyle}
+          className="mx-6 mt-6"
+        >
+          <StatusStepper currentStatus={order?.status ?? 'ready_to_redeem'} />
+        </Animated.View>
+
+        {/* Header */}
+        <Animated.View
+          entering={FadeInDown.delay(100).duration(350)}
+          className="mx-6 mt-5 items-center"
         >
           <Text className="text-2xl font-bold text-white text-center">
             Your Beer is Ready!
@@ -296,8 +618,8 @@ export default function RedeemScreen() {
 
         {/* QR Code */}
         <Animated.View
-          entering={FadeIn.delay(200).duration(500)}
-          className="mx-6 mt-6 items-center"
+          entering={FadeIn.delay(250).duration(500)}
+          className="mx-6 mt-5 items-center"
         >
           <View className="bg-white rounded-3xl p-6">
             {qrData ? (
@@ -312,8 +634,8 @@ export default function RedeemScreen() {
 
         {/* Go to Tap instruction */}
         <Animated.View
-          entering={FadeInDown.delay(350).duration(350)}
-          className="mx-6 mt-6 items-center"
+          entering={FadeInDown.delay(400).duration(350)}
+          className="mx-6 mt-5 items-center"
         >
           <Text className="text-3xl font-bold text-brand text-center">
             Go to Tap #{tapNumber ?? '?'}
@@ -322,8 +644,8 @@ export default function RedeemScreen() {
 
         {/* Step-by-step instructions */}
         <Animated.View
-          entering={FadeInDown.delay(450).duration(350)}
-          className="mx-6 mt-5 bg-dark-700 rounded-2xl p-5 border border-dark-600"
+          entering={FadeInDown.delay(500).duration(350)}
+          className="mx-6 mt-4 bg-dark-700 rounded-2xl p-5 border border-dark-600"
         >
           <View className="flex-row items-start mb-3">
             <View className="w-7 h-7 rounded-full bg-brand/20 items-center justify-center mr-3 mt-0.5">
@@ -353,8 +675,8 @@ export default function RedeemScreen() {
 
         {/* Countdown Timer */}
         <Animated.View
-          entering={FadeInDown.delay(550).duration(350)}
-          className="mx-6 mt-5 items-center"
+          entering={FadeInDown.delay(600).duration(350)}
+          className="mx-6 mt-4 items-center"
         >
           <Text className="text-sm text-white/50 mb-2">Time remaining</Text>
           <Text
@@ -373,8 +695,8 @@ export default function RedeemScreen() {
 
         {/* Order Summary */}
         <Animated.View
-          entering={FadeInDown.delay(650).duration(350)}
-          className="mx-6 mt-5 bg-dark-700 rounded-2xl p-4 border border-dark-600"
+          entering={FadeInDown.delay(700).duration(350)}
+          className="mx-6 mt-4 bg-dark-700 rounded-2xl p-4 border border-dark-600"
         >
           <View className="flex-row justify-between items-center mb-2">
             <Text className="text-sm text-white/50">Beer</Text>
@@ -398,8 +720,8 @@ export default function RedeemScreen() {
 
         {/* View Order Details - Expandable */}
         <Animated.View
-          entering={FadeInDown.delay(750).duration(350)}
-          className="mx-6 mt-4"
+          entering={FadeInDown.delay(800).duration(350)}
+          className="mx-6 mt-3"
         >
           <Pressable
             onPress={() => setDetailsExpanded((prev) => !prev)}
@@ -466,8 +788,8 @@ export default function RedeemScreen() {
           )}
         </Animated.View>
 
-        {/* Done button */}
-        <View className="mx-6 mt-6">
+        {/* Leave button */}
+        <View className="mx-6 mt-5">
           <Pressable
             onPress={() => {
               Alert.alert(
@@ -477,7 +799,7 @@ export default function RedeemScreen() {
                   { text: 'Stay', style: 'cancel' },
                   {
                     text: 'Leave',
-                    onPress: handleDone,
+                    onPress: handleBackToVenues,
                   },
                 ],
               );

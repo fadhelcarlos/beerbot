@@ -427,3 +427,28 @@ after each iteration and it's included in prompts for context.
   - The `returnURL` in `initPaymentSheet` (`beerbot://payment-complete`) uses the existing deep link scheme for redirect-based payment methods (3D Secure, etc.)
 ---
 
+## 2026-02-11 - US-008
+- What was implemented:
+  - Created `supabase/functions/stripe-webhook/index.ts` (Deno Edge Function):
+    - Verifies Stripe webhook signature using `stripe.webhooks.constructEventAsync()` with `STRIPE_WEBHOOK_SECRET`
+    - Handles `payment_intent.succeeded`: updates order status to `paid` (with `paid_at`), then generates QR token (inline JWT creation mirroring `generate-qr-token`), updates status to `ready_to_redeem`
+    - Handles `payment_intent.payment_failed`: updates order status to `cancelled`, restores `oz_remaining` on the tap (read-then-write pattern)
+    - Handles `charge.refunded`: finds order by `stripe_payment_intent_id`, updates status to `refunded`
+    - Idempotent handling: checks `order_events` table for existing entries with matching `stripe_event_id` in metadata before processing; also checks order status to avoid reprocessing
+    - All events logged to `order_events` table with Stripe event metadata (`stripe_event_id`, `payment_intent_id`, amounts, failure details)
+    - Returns 200 OK on success (including duplicates), 500 on error for Stripe retry
+    - No CORS headers needed (webhook from Stripe, not browser)
+    - No user JWT auth needed (webhook authenticated via signature verification)
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `supabase/functions/stripe-webhook/index.ts` — Stripe webhook handler Edge Function (new)
+- **Learnings:**
+  - Stripe webhook signature verification in Deno uses `stripe.webhooks.constructEventAsync()` (async version) — the sync `constructEvent()` requires Node's `crypto` module which isn't available in Deno
+  - Webhook Edge Functions don't need CORS headers or user JWT authentication — they're called by Stripe directly, not from a browser
+  - For idempotency, checking `order_events` metadata JSON field uses Supabase `.filter("metadata->>stripe_event_id", "eq", eventId)` — the `->>` operator extracts JSON text for comparison
+  - Supabase JS client doesn't support `SET col = col + X` syntax — for atomic increments (restoring inventory), need read-then-write or an RPC function. Read-then-write is acceptable in webhook context since concurrent writes to the same tap are unlikely during failure handling
+  - `STRIPE_WEBHOOK_SECRET` must be set as a Supabase secret (`supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_...`) — obtained from Stripe Dashboard > Developers > Webhooks
+  - QR token generation is inlined in the webhook handler rather than calling the `generate-qr-token` Edge Function, because Edge Functions can't easily invoke other Edge Functions internally — the inline approach mirrors the same JWT signing logic
+---
+

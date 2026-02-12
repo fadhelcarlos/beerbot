@@ -597,3 +597,34 @@ after each iteration and it's included in prompts for context.
   - 200 meters ≈ 0.124 miles — this is the "You're here!" threshold for nearby venue detection
 ---
 
+## 2026-02-11 - US-017
+- What was implemented:
+  - Replaced placeholder `app/(main)/venues/[id].tsx` with full Beer List screen:
+    - Collapsible venue header: venue name, address, 'Change venue' button; shrinks on scroll using reanimated `useAnimatedStyle` + `interpolate`
+    - GPS proximity check: if user is far from venue (>0.5 mi), shows subtle yellow warning "You're not at this venue"
+    - Beer cards showing: beer name, style, ABV, price (12oz), availability badge, temperature
+    - Availability badges with color coding: green 'Available', yellow 'Low', red/grey 'Out'
+    - Temperature display: shows degrees F if sensor data exists, 'N/A' if null
+    - If `temp_ok=false`: blue 'Cooling down' badge with snowflake icon, beer card not tappable
+    - 'Out' beers visually dimmed (`opacity-50`) and not tappable
+    - 'Low' beers show warning text: 'Limited — order at the station'
+    - Tapping available beer navigates to beer detail/order screen (future US)
+    - Supabase realtime subscription on taps table for live updates via `subscribeTaps()` — merges updated tap fields into TanStack Query cache while preserving beer/pricing data
+    - Pull-to-refresh via RefreshControl that refetches taps
+    - Empty state: 'No beers on tap right now. Check back soon!'
+    - Error state with pull-to-refresh hint
+    - Loading state with ActivityIndicator
+    - BeerBot dark theme with brand amber accents, FadeIn/FadeInDown entrance animations
+  - Added `fetchVenue(venueId)` to `lib/api/venues.ts` — fetches a single venue by ID for the header
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes (0 errors, 0 warnings)
+- Files changed:
+  - `app/(main)/venues/[id].tsx` — full beer list screen (rewritten from placeholder)
+  - `lib/api/venues.ts` — added `fetchVenue` function
+- **Learnings:**
+  - Reanimated `useAnimatedStyle` with `interpolate` + `Extrapolation.CLAMP` works well for collapsible headers driven by `FlatList` scroll — set `scrollEventThrottle={16}` and update a `useSharedValue` in `onScroll`
+  - For realtime tap updates, the `subscribeTaps` callback only gets the raw `Tap` row (no joins) — must merge with cached `TapWithBeer` data to preserve `beer` and `price_12oz` fields, and recompute `availability_status` from `oz_remaining` / `low_threshold_oz`
+  - `Location.getForegroundPermissionsAsync()` (no prompt) is better than `requestForegroundPermissionsAsync()` for secondary screens — avoids re-prompting when permission was already granted/denied on the venue selection screen
+  - Supabase `decimal` columns come back as numbers in JS, but TypeScript doesn't know this — casting with `Number()` is safe for lat/lng used in Haversine calculations
+---
+

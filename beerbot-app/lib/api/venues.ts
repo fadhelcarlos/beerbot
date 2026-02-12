@@ -49,6 +49,20 @@ export async function fetchVenues(params?: {
 }
 
 /**
+ * Fetch a single venue by ID.
+ */
+export async function fetchVenue(venueId: string): Promise<Venue> {
+  const { data, error } = await supabase
+    .from('venues')
+    .select('*')
+    .eq('id', venueId)
+    .single();
+
+  if (error) throw error;
+  return data as Venue;
+}
+
+/**
  * Fetch active tap counts for a list of venue IDs.
  * Returns a map of venueId -> active tap count.
  */

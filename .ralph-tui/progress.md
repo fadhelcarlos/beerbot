@@ -699,3 +699,39 @@ after each iteration and it's included in prompts for context.
   - Placeholder screens are required for Expo Router typed routes even if the destination will be implemented in a future user story
 ---
 
+## 2026-02-11 - US-020
+- What was implemented:
+  - Replaced placeholder `app/(main)/order/payment.tsx` with full Payment screen:
+    - Order summary at top: beer name, style, ABV, tap number badge, unit price, quantity, total
+    - Payment amount sourced from server-side `total_amount` (from `createOrder` response), not client-side calculation
+    - On mount: creates order atomically via `createOrder()` Edge Function, then initializes Stripe Payment Sheet via `initializePaymentSheet()`
+    - "Pay $X.XX" CTA button presents Stripe native PaymentSheet (supports Apple Pay on iOS, Google Pay on Android, and card entry)
+    - Idempotency: `isPayingRef` prevents double-tap from creating duplicate charges; Edge Function uses Stripe `idempotencyKey`
+    - Processing state: shows spinner + "Processing payment..." while Stripe sheet is active
+    - Success state: celebration emoji + "Payment Successful!" with auto-navigation to QR screen after 1.5s
+    - Failure state: "Payment declined" with "Try Again" button (re-initializes payment sheet using idempotent PaymentIntent) and "Cancel" button
+    - Error state: handles order creation failures with "Go Back" button
+    - Supabase realtime subscription on orders table filtered by `id=eq.${orderId}` — detects `paid`/`ready_to_redeem` status from Stripe webhook and triggers success navigation
+    - Network error fallback: if realtime is slow after 5s, starts polling `getOrder()` every 3s with 30s timeout, shows "Checking payment status..." state
+    - Cancel confirmation dialog: "Cancel Payment?" alert before navigating back
+    - BeerBot dark theme (bg-dark, brand amber accents), FadeIn/FadeInDown staggered entrance animations, safe area insets
+  - Created `app/(main)/order/qr.tsx` — placeholder QR code screen (navigation target for typed routes)
+  - Updated `app/_layout.tsx`:
+    - Wrapped app in `StripeProvider` from `@stripe/stripe-react-native` with publishable key, `merchantIdentifier`, and `urlScheme`
+    - `StripeProvider` wraps `QueryClientProvider` and entire navigation stack
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes (0 errors, 0 warnings)
+- Files changed:
+  - `app/(main)/order/payment.tsx` — full payment screen (rewritten from placeholder)
+  - `app/(main)/order/qr.tsx` — placeholder QR code screen (new)
+  - `app/_layout.tsx` — added StripeProvider wrapper + imports
+- **Learnings:**
+  - `StripeProvider` must wrap the entire app (in root layout) for `initPaymentSheet`/`presentPaymentSheet` to work — it provides the Stripe SDK context to all child screens
+  - The `StripeProvider` `urlScheme` prop must match the app's deep link scheme (`beerbot`) for 3D Secure and redirect-based payment methods to return to the app
+  - For payment confirmation, a dual strategy works best: (1) Supabase realtime subscription for instant webhook-driven updates, (2) polling fallback with timeout for network issues
+  - Stripe's `presentPaymentSheet()` returns after user interaction (success or cancel) but BEFORE the webhook fires — the server-side status update arrives asynchronously via the Stripe webhook, so the app must wait for the realtime/polling confirmation
+  - Using a `useRef` (`isPayingRef`) for idempotency is better than state because it updates synchronously and prevents race conditions from rapid double-taps that `useState` might miss
+  - The `createOrder` Edge Function returns `total_amount` from the server — this is the source of truth for payment amount, matching the AC requirement that payment amount comes from PaymentIntent (server-side)
+  - Supabase realtime `postgres_changes` can filter individual rows with `filter: 'id=eq.${orderId}'` — more efficient than subscribing to all orders
+---
+

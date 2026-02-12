@@ -4,8 +4,10 @@ import { useEffect, useCallback } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { StripeProvider } from '@stripe/stripe-react-native';
 import * as Linking from 'expo-linking';
 import { useAuthStore } from '@/lib/stores/auth-store';
+import { getStripePublishableKey } from '@/lib/api/payments';
 
 const queryClient = new QueryClient();
 
@@ -79,11 +81,17 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 export default function RootLayout() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <StatusBar style="light" />
-      <AuthGate>
-        <Stack screenOptions={{ headerShown: false }} />
-      </AuthGate>
-    </QueryClientProvider>
+    <StripeProvider
+      publishableKey={getStripePublishableKey()}
+      merchantIdentifier="merchant.com.beerbot.app"
+      urlScheme="beerbot"
+    >
+      <QueryClientProvider client={queryClient}>
+        <StatusBar style="light" />
+        <AuthGate>
+          <Stack screenOptions={{ headerShown: false }} />
+        </AuthGate>
+      </QueryClientProvider>
+    </StripeProvider>
   );
 }

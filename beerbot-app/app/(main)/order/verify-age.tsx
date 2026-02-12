@@ -2,10 +2,11 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
+  Image,
   Pressable,
-  ActivityIndicator,
   Alert,
   Platform,
+  StyleSheet,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,10 +15,29 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { WebView } from 'react-native-webview';
 import type { WebViewNavigation } from 'react-native-webview';
 import {
+  ArrowLeft,
+  Shield,
+  ShieldCheck,
+  ShieldX,
+  Camera,
+  User,
+  CheckCircle2,
+  X,
+  Check,
+} from 'lucide-react-native';
+import {
   checkVerificationStatus,
   createVerificationSession,
 } from '@/lib/api/verification';
 import { subscribeTaps } from '@/lib/api/venues';
+import { GlassCard, GoldButton, ShimmerLoader } from '@/components/ui';
+import {
+  colors,
+  typography,
+  radius,
+  spacing,
+  shadows,
+} from '@/lib/theme';
 import type { Tap, TapWithBeer } from '@/types/api';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -44,6 +64,29 @@ function mapFailureReason(url: string): string {
   if (url.includes('expired'))
     return 'Session expired. Please try again.';
   return 'Verification was not successful. Please try again.';
+}
+
+// ─────────────────────────────────────────────────
+// Gold Shimmer Loading
+// ─────────────────────────────────────────────────
+
+function GoldLoadingState({ message, subtitle }: { message: string; subtitle?: string }) {
+  return (
+    <View style={styles.centered}>
+      <ShimmerLoader type="beer" count={1} />
+      <View style={styles.loadingIconCircle}>
+        <Shield size={28} color={colors.gold[400]} />
+      </View>
+      <Text style={[typography.heading, { color: colors.text.primary, textAlign: 'center', marginTop: 20 }]}>
+        {message}
+      </Text>
+      {subtitle && (
+        <Text style={[typography.caption, { color: colors.text.secondary, textAlign: 'center', marginTop: 8 }]}>
+          {subtitle}
+        </Text>
+      )}
+    </View>
+  );
 }
 
 // ─────────────────────────────────────────────────
@@ -299,14 +342,8 @@ export default function VerifyAgeScreen() {
 
   if (screenState === 'checking') {
     return (
-      <View
-        className="flex-1 bg-dark items-center justify-center"
-        style={{ paddingTop: insets.top }}
-      >
-        <ActivityIndicator color="#f59e0b" size="large" />
-        <Text className="text-white/40 text-sm mt-4">
-          Checking verification status...
-        </Text>
+      <View style={[styles.screen, styles.screenCentered, { paddingTop: insets.top }]}>
+        <GoldLoadingState message="Checking verification status..." />
       </View>
     );
   }
@@ -317,10 +354,10 @@ export default function VerifyAgeScreen() {
 
   if (screenState === 'verifying' && sessionUrl) {
     return (
-      <View className="flex-1 bg-dark" style={{ paddingTop: insets.top }}>
+      <View style={[styles.screen, { paddingTop: insets.top }]}>
         {/* Header with cancel */}
-        <View className="px-6 py-3 flex-row items-center justify-between border-b border-dark-600">
-          <Text className="text-lg font-semibold text-white">
+        <View style={styles.webviewHeader}>
+          <Text style={[typography.heading, { color: colors.text.primary }]}>
             Age Verification
           </Text>
           <Pressable
@@ -339,9 +376,9 @@ export default function VerifyAgeScreen() {
               );
             }}
             hitSlop={16}
-            className="active:opacity-60"
+            style={styles.cancelButton}
           >
-            <Text className="text-brand text-base">Cancel</Text>
+            <X size={20} color={colors.gold[400]} />
           </Pressable>
         </View>
 
@@ -364,11 +401,8 @@ export default function VerifyAgeScreen() {
           }}
           startInLoadingState
           renderLoading={() => (
-            <View className="absolute inset-0 bg-dark items-center justify-center">
-              <ActivityIndicator color="#f59e0b" size="large" />
-              <Text className="text-white/40 text-sm mt-4">
-                Loading verification...
-              </Text>
+            <View style={[StyleSheet.absoluteFill, styles.screen, styles.screenCentered]}>
+              <GoldLoadingState message="Loading verification..." />
             </View>
           )}
           {...(Platform.OS === 'android' && {
@@ -386,27 +420,25 @@ export default function VerifyAgeScreen() {
 
   if (screenState === 'processing' || screenState === 'success') {
     return (
-      <View
-        className="flex-1 bg-dark items-center justify-center px-8"
-        style={{ paddingTop: insets.top }}
-      >
+      <View style={[styles.screen, styles.screenCentered, { paddingTop: insets.top }]}>
         {screenState === 'processing' ? (
-          <>
-            <ActivityIndicator color="#f59e0b" size="large" />
-            <Text className="text-white text-lg font-semibold mt-6 text-center">
-              Verifying your identity...
-            </Text>
-            <Text className="text-white/40 text-sm mt-2 text-center">
-              This may take a moment
-            </Text>
-          </>
+          <GoldLoadingState
+            message="Verifying your identity..."
+            subtitle="This may take a moment"
+          />
         ) : (
-          <Animated.View entering={FadeIn.duration(400)} className="items-center">
-            <Text className="text-5xl">{'\u2705'}</Text>
-            <Text className="text-white text-lg font-semibold mt-4 text-center">
+          <Animated.View entering={FadeIn.duration(400)} style={styles.centeredContent}>
+            <View style={styles.successIconCircle}>
+              <Image
+                source={require('@/assets/verify_icon.png')}
+                style={{ width: 48, height: 48 }}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={[typography.heading, { color: colors.text.primary, textAlign: 'center', marginTop: 16 }]}>
               Age Verified!
             </Text>
-            <Text className="text-white/40 text-sm mt-2 text-center">
+            <Text style={[typography.caption, { color: colors.text.secondary, textAlign: 'center', marginTop: 8 }]}>
               Proceeding to payment...
             </Text>
           </Animated.View>
@@ -421,14 +453,8 @@ export default function VerifyAgeScreen() {
 
   if (screenState === 'loading_session') {
     return (
-      <View
-        className="flex-1 bg-dark items-center justify-center"
-        style={{ paddingTop: insets.top }}
-      >
-        <ActivityIndicator color="#f59e0b" size="large" />
-        <Text className="text-white/40 text-sm mt-4">
-          Starting verification session...
-        </Text>
+      <View style={[styles.screen, styles.screenCentered, { paddingTop: insets.top }]}>
+        <GoldLoadingState message="Starting verification session..." />
       </View>
     );
   }
@@ -442,41 +468,32 @@ export default function VerifyAgeScreen() {
 
     return (
       <View
-        className="flex-1 bg-dark"
-        style={{ paddingTop: insets.top, paddingBottom: insets.bottom + 16 }}
+        style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom + 16 }]}
       >
-        <View className="flex-1 items-center justify-center px-8">
-          <Animated.View entering={FadeIn.duration(400)} className="items-center">
-            <Text className="text-5xl">{'\u274C'}</Text>
-            <Text className="text-white text-xl font-bold mt-6 text-center">
+        <View style={styles.failedContent}>
+          <Animated.View entering={FadeIn.duration(400)} style={styles.centeredContent}>
+            <View style={styles.failedIconCircle}>
+              <ShieldX size={36} color={colors.status.danger} />
+            </View>
+            <Text style={[typography.title, { color: colors.text.primary, textAlign: 'center', marginTop: 20 }]}>
               Verification Failed
             </Text>
-            <Text className="text-white/50 text-base mt-3 text-center leading-6">
+            <Text style={[typography.body, { color: colors.text.secondary, textAlign: 'center', marginTop: 12, lineHeight: 24 }]}>
               {failureReason}
             </Text>
             {canRetry && (
-              <Text className="text-white/30 text-sm mt-4 text-center">
+              <Text style={[typography.caption, { color: colors.text.tertiary, textAlign: 'center', marginTop: 16 }]}>
                 Attempt {attempts} of {MAX_ATTEMPTS}
               </Text>
             )}
           </Animated.View>
         </View>
 
-        <View className="px-6">
+        <View style={styles.ctaSection}>
           {canRetry ? (
-            <Pressable
-              onPress={startVerification}
-              className="w-full items-center justify-center rounded-2xl py-4 bg-brand active:opacity-80"
-            >
-              <Text className="text-lg font-bold text-dark">Try Again</Text>
-            </Pressable>
+            <GoldButton label="Try Again" onPress={startVerification} />
           ) : (
-            <Pressable
-              onPress={() => router.back()}
-              className="w-full items-center justify-center rounded-2xl py-4 bg-dark-600 active:opacity-80"
-            >
-              <Text className="text-lg font-bold text-white">Go Back</Text>
-            </Pressable>
+            <GoldButton label="Go Back" variant="ghost" onPress={() => router.back()} />
           )}
         </View>
       </View>
@@ -489,100 +506,103 @@ export default function VerifyAgeScreen() {
 
   return (
     <View
-      className="flex-1 bg-dark"
-      style={{ paddingTop: insets.top, paddingBottom: insets.bottom + 16 }}
+      style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom + 16 }]}
     >
       {/* Back button */}
       <Pressable
         onPress={() => router.back()}
-        className="px-6 pt-4 pb-2 self-start active:opacity-60"
+        style={styles.backButton}
         hitSlop={16}
       >
-        <Text className="text-brand text-base">{'\u2190'} Back</Text>
+        <View style={styles.backButtonCircle}>
+          <ArrowLeft size={20} color={colors.text.primary} />
+        </View>
       </Pressable>
 
-      <View className="flex-1 px-6 justify-center">
+      <View style={styles.explanationContent}>
         {/* Shield icon */}
         <Animated.View
           entering={FadeIn.duration(400)}
-          className="items-center mb-8"
+          style={styles.centeredContent}
         >
-          <View className="w-24 h-24 rounded-full bg-brand/15 items-center justify-center">
-            <Text className="text-5xl">{'\uD83D\uDEE1\uFE0F'}</Text>
+          <View style={styles.shieldIconCircle}>
+            <Image
+              source={require('@/assets/verify_icon.png')}
+              style={{ width: 64, height: 64 }}
+              resizeMode="contain"
+            />
           </View>
         </Animated.View>
 
         {/* Title */}
         <Animated.View entering={FadeInDown.delay(100).duration(350)}>
-          <Text className="text-2xl font-bold text-white text-center">
+          <Text style={[typography.title, { color: colors.text.primary, textAlign: 'center' }]}>
             Age Verification Required
           </Text>
-          <Text className="text-base text-white/50 mt-3 text-center leading-6">
+          <Text style={[typography.body, { color: colors.text.secondary, marginTop: 12, textAlign: 'center', lineHeight: 24 }]}>
             We need to verify you&apos;re 21+ before you can purchase beer. This is a one-time process.
           </Text>
         </Animated.View>
 
         {/* What to expect */}
-        <Animated.View
-          entering={FadeInDown.delay(200).duration(350)}
-          className="mt-8 bg-dark-700 rounded-2xl p-5 border border-dark-600"
-        >
-          <Text className="text-sm font-semibold text-white mb-3">
-            What to expect:
-          </Text>
-          <View className="gap-2.5">
-            <View className="flex-row items-center">
-              <Text className="text-sm mr-3">{'\uD83D\uDCF7'}</Text>
-              <Text className="text-sm text-white/60 flex-1">
-                Take a photo of your government ID
-              </Text>
+        <Animated.View entering={FadeInDown.delay(200).duration(350)}>
+          <GlassCard style={styles.expectCard}>
+            <Text style={[typography.label, { color: colors.text.primary, marginBottom: 16 }]}>
+              What to expect:
+            </Text>
+            <View style={styles.expectList}>
+              <View style={styles.expectItem}>
+                <View style={styles.expectIconCircle}>
+                  <Camera size={16} color={colors.gold[400]} />
+                </View>
+                <Text style={[typography.body, { color: colors.text.secondary, flex: 1, fontSize: 14 }]}>
+                  Take a photo of your government ID
+                </Text>
+              </View>
+              <View style={styles.expectItem}>
+                <View style={styles.expectIconCircle}>
+                  <User size={16} color={colors.gold[400]} />
+                </View>
+                <Text style={[typography.body, { color: colors.text.secondary, flex: 1, fontSize: 14 }]}>
+                  Take a quick selfie for verification
+                </Text>
+              </View>
+              <View style={styles.expectItem}>
+                <View style={styles.expectIconCircle}>
+                  <CheckCircle2 size={16} color={colors.gold[400]} />
+                </View>
+                <Text style={[typography.body, { color: colors.text.secondary, flex: 1, fontSize: 14 }]}>
+                  Complete a brief liveness check
+                </Text>
+              </View>
             </View>
-            <View className="flex-row items-center">
-              <Text className="text-sm mr-3">{'\uD83E\uDD33'}</Text>
-              <Text className="text-sm text-white/60 flex-1">
-                Take a quick selfie for verification
-              </Text>
-            </View>
-            <View className="flex-row items-center">
-              <Text className="text-sm mr-3">{'\u2705'}</Text>
-              <Text className="text-sm text-white/60 flex-1">
-                Complete a brief liveness check
-              </Text>
-            </View>
-          </View>
+          </GlassCard>
         </Animated.View>
 
         {/* Privacy notice */}
-        <Animated.View
-          entering={FadeInDown.delay(300).duration(350)}
-          className="mt-4 px-2"
-        >
-          <Text className="text-xs text-white/30 text-center leading-5">
+        <Animated.View entering={FadeInDown.delay(300).duration(350)}>
+          <Text style={[typography.caption, { color: colors.text.tertiary, textAlign: 'center', marginTop: 16, lineHeight: 18 }]}>
             Your ID is processed securely by Veriff and not stored by BeerBot
           </Text>
         </Animated.View>
 
         {/* Remember verification checkbox */}
-        <Animated.View
-          entering={FadeInDown.delay(400).duration(350)}
-          className="mt-6"
-        >
+        <Animated.View entering={FadeInDown.delay(400).duration(350)}>
           <Pressable
             onPress={() => setRememberVerification((prev) => !prev)}
-            className="flex-row items-center justify-center gap-3 active:opacity-70"
+            style={styles.checkboxRow}
           >
             <View
-              className={`w-5 h-5 rounded border-2 items-center justify-center ${
-                rememberVerification
-                  ? 'bg-brand border-brand'
-                  : 'border-white/30 bg-transparent'
-              }`}
+              style={[
+                styles.checkbox,
+                rememberVerification && styles.checkboxChecked,
+              ]}
             >
               {rememberVerification && (
-                <Text className="text-xs text-dark font-bold">{'\u2713'}</Text>
+                <Check size={12} color={colors.bg.primary} strokeWidth={3} />
               )}
             </View>
-            <Text className="text-sm text-white/60">
+            <Text style={[typography.label, { color: colors.text.secondary }]}>
               Remember my verification
             </Text>
           </Pressable>
@@ -592,15 +612,152 @@ export default function VerifyAgeScreen() {
       {/* CTA Button */}
       <Animated.View
         entering={FadeIn.delay(500).duration(400)}
-        className="px-6"
+        style={styles.ctaSection}
       >
-        <Pressable
-          onPress={startVerification}
-          className="w-full items-center justify-center rounded-2xl py-4 bg-brand active:opacity-80"
-        >
-          <Text className="text-lg font-bold text-dark">Verify My Age</Text>
-        </Pressable>
+        <GoldButton label="Verify My Age" onPress={startVerification} />
       </Animated.View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+  },
+  screenCentered: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.screenPadding,
+  },
+  centered: {
+    alignItems: 'center',
+  },
+  centeredContent: {
+    alignItems: 'center',
+  },
+  backButton: {
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 16,
+    paddingBottom: 8,
+    alignSelf: 'flex-start',
+  },
+  backButtonCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.glass.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(200,162,77,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(200,162,77,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.glowSubtle,
+  },
+  successIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(200,162,77,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.glow,
+  },
+  failedIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.status.dangerMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shieldIconCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: 'rgba(200,162,77,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 32,
+    ...shadows.glowSubtle,
+  },
+  explanationContent: {
+    flex: 1,
+    paddingHorizontal: spacing.screenPadding,
+    justifyContent: 'center',
+  },
+  expectCard: {
+    marginTop: spacing.sectionGap,
+  },
+  expectList: {
+    gap: 12,
+  },
+  expectItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  expectIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(200,162,77,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 24,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.text.tertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: colors.gold[500],
+    borderColor: colors.gold[500],
+  },
+  ctaSection: {
+    paddingHorizontal: spacing.screenPadding,
+  },
+  failedContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.screenPadding,
+  },
+  webviewHeader: {
+    paddingHorizontal: spacing.screenPadding,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.glass.border,
+  },
+  cancelButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.glass.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

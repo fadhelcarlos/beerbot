@@ -2,17 +2,35 @@ import { useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
+  Image,
   Pressable,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  ActivityIndicator,
+  StyleSheet,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, {
+  FadeInDown,
+  FadeIn,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
+import { ArrowLeft, Mail, CheckCircle } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import { supabase } from '@/lib/supabase';
+import { GlassCard, GlassInput, GoldButton } from '@/components/ui';
+import {
+  colors,
+  typography,
+  spacing,
+  radius,
+  springs,
+} from '@/lib/theme';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -26,6 +44,12 @@ export default function ForgotPasswordScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+
+  // Back button scale animation
+  const backScale = useSharedValue(1);
+  const backAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: backScale.value }],
+  }));
 
   const handleReset = async () => {
     if (!isValidEmail(email) || isLoading) return;
@@ -54,7 +78,7 @@ export default function ForgotPasswordScreen() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-dark"
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}
     >
@@ -67,93 +91,184 @@ export default function ForgotPasswordScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Pressable
-          onPress={() => router.back()}
-          className="px-6 pt-4 pb-2 self-start active:opacity-60"
+        {/* Back button */}
+        <AnimatedPressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            router.back();
+          }}
+          onPressIn={() => {
+            backScale.value = withSpring(0.93, springs.button);
+          }}
+          onPressOut={() => {
+            backScale.value = withSpring(1, springs.button);
+          }}
+          style={[styles.backButton, backAnimStyle]}
           hitSlop={16}
         >
-          <Text className="text-brand text-base">{'\u2190'} Back</Text>
-        </Pressable>
+          <ArrowLeft size={20} color={colors.text.primary} strokeWidth={2} />
+        </AnimatedPressable>
 
-        <Animated.View
-          entering={FadeIn.duration(400)}
-          className="flex-1 px-6 pt-6"
-        >
-          <Text className="text-3xl font-bold text-white">Reset Password</Text>
-          <Text className="text-base text-white/50 mt-2">
-            Enter your email and we&apos;ll send you a reset link
-          </Text>
-
-          {error && (
-            <Animated.View
-              entering={FadeIn.duration(200)}
-              className="mt-6 rounded-xl bg-red-500/15 border border-red-500/30 px-4 py-3"
+        <View style={styles.content}>
+          {/* Header */}
+          <Animated.View entering={FadeInDown.duration(400).delay(100)}>
+            <Image
+              source={require('../../assets/app_logo.png')}
+              style={{ width: 56, height: 56, alignSelf: 'center', marginBottom: 20 }}
+              resizeMode="contain"
+            />
+            <Text style={[typography.display, { color: colors.text.primary }]}>
+              Reset Password
+            </Text>
+            <Text
+              style={[
+                typography.body,
+                { color: colors.text.secondary, marginTop: 8 },
+              ]}
             >
-              <Text className="text-red-400 text-sm">{error}</Text>
+              Enter your email and we'll send you a reset link
+            </Text>
+          </Animated.View>
+
+          {/* Error banner */}
+          {error && (
+            <Animated.View entering={FadeIn.duration(200)} style={{ marginTop: 24 }}>
+              <GlassCard
+                style={{
+                  borderColor: 'rgba(248,113,113,0.3)',
+                  borderWidth: 1,
+                  backgroundColor: colors.status.dangerMuted,
+                }}
+              >
+                <Text style={[typography.label, { color: colors.status.danger }]}>
+                  {error}
+                </Text>
+              </GlassCard>
             </Animated.View>
           )}
 
           {sent ? (
             <Animated.View
               entering={FadeIn.duration(300)}
-              className="mt-8 rounded-xl bg-green-500/15 border border-green-500/30 px-4 py-4"
+              style={{ marginTop: 32 }}
             >
-              <Text className="text-green-400 text-base font-medium">
-                Check your email for a reset link
-              </Text>
-              <Text className="text-green-400/70 text-sm mt-1">
-                We sent a password reset link to {email}
-              </Text>
+              <GlassCard
+                goldAccent
+                style={{
+                  borderColor: 'rgba(52,211,153,0.2)',
+                  borderWidth: 1,
+                  backgroundColor: colors.status.successMuted,
+                }}
+              >
+                <View style={styles.successRow}>
+                  <CheckCircle
+                    size={22}
+                    color={colors.status.success}
+                    strokeWidth={2}
+                  />
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text
+                      style={[
+                        typography.bodyMedium,
+                        { color: colors.status.success },
+                      ]}
+                    >
+                      Check your email for a reset link
+                    </Text>
+                    <Text
+                      style={[
+                        typography.caption,
+                        { color: 'rgba(52,211,153,0.7)', marginTop: 4 },
+                      ]}
+                    >
+                      We sent a password reset link to {email}
+                    </Text>
+                  </View>
+                </View>
+              </GlassCard>
             </Animated.View>
           ) : (
-            <View className="mt-8">
-              <Text className="text-sm text-white/70 mb-2">Email</Text>
-              <TextInput
-                className="bg-dark-700 rounded-xl px-4 py-3.5 text-white text-base"
-                placeholder="you@example.com"
-                placeholderTextColor="rgba(255,255,255,0.25)"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoComplete="email"
-                autoCorrect={false}
-                returnKeyType="done"
-                editable={!isLoading}
-                onSubmitEditing={handleReset}
-              />
+            <View style={{ marginTop: 32 }}>
+              <Animated.View entering={FadeInDown.duration(400).delay(200)}>
+                <GlassInput
+                  label="Email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                  editable={!isLoading}
+                  onSubmitEditing={handleReset}
+                />
+              </Animated.View>
 
-              <Pressable
-                onPress={handleReset}
-                disabled={!isValidEmail(email) || isLoading}
-                className={`mt-6 w-full items-center justify-center rounded-2xl py-4 ${
-                  isValidEmail(email) && !isLoading
-                    ? 'bg-brand active:opacity-80'
-                    : 'bg-brand/40'
-                }`}
+              <Animated.View
+                entering={FadeInDown.duration(400).delay(300)}
+                style={{ marginTop: 24 }}
               >
-                {isLoading ? (
-                  <ActivityIndicator color="#1a1a2e" size="small" />
-                ) : (
-                  <Text className="text-lg font-bold text-dark">
-                    Send Reset Link
-                  </Text>
-                )}
-              </Pressable>
+                <GoldButton
+                  label="Send Reset Link"
+                  onPress={handleReset}
+                  disabled={!isValidEmail(email) || isLoading}
+                  loading={isLoading}
+                />
+              </Animated.View>
             </View>
           )}
 
-          <Pressable
-            onPress={() => router.push('/(auth)/login')}
-            className="mt-6 active:opacity-60"
-          >
-            <Text className="text-sm text-white/50 text-center">
-              Remember your password?{' '}
-              <Text className="text-brand font-medium">Log in</Text>
-            </Text>
-          </Pressable>
-        </Animated.View>
+          <Animated.View entering={FadeInDown.duration(400).delay(400)}>
+            <Pressable
+              onPress={() => router.push('/(auth)/login')}
+              style={styles.bottomLink}
+            >
+              <Text
+                style={[
+                  typography.label,
+                  { color: colors.text.secondary, textAlign: 'center' },
+                ]}
+              >
+                Remember your password?{' '}
+                <Text style={{ color: colors.gold[500] }}>Log in</Text>
+              </Text>
+            </Pressable>
+          </Animated.View>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.glass.surface,
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.screenPadding,
+    marginTop: 12,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 24,
+  },
+  successRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  bottomLink: {
+    marginTop: 24,
+    paddingVertical: 8,
+  },
+});

@@ -2,21 +2,40 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  TextInput,
+  Image,
   Pressable,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  ActivityIndicator,
+  StyleSheet,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, {
+  FadeInDown,
+  FadeIn,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
+import * as Haptics from 'expo-haptics';
+import { ArrowLeft, Fingerprint } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
+import { GlassCard, GlassInput, GoldButton } from '@/components/ui';
+import {
+  colors,
+  typography,
+  spacing,
+  radius,
+  springs,
+  shadows,
+} from '@/lib/theme';
 
 const BIOMETRIC_EMAIL_KEY = 'beerbot_biometric_email';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -64,8 +83,15 @@ export default function LoginScreen() {
   const [biometricType, setBiometricType] = useState<string>('Biometrics');
   const [hasPreviousLogin, setHasPreviousLogin] = useState(false);
 
-  // Check biometric availability on mount
+  // Back button scale animation
+  const backScale = useSharedValue(1);
+  const backAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: backScale.value }],
+  }));
+
+  // Check biometric availability on mount (native only)
   useEffect(() => {
+    if (Platform.OS === 'web') return;
     (async () => {
       const compatible = await LocalAuthentication.hasHardwareAsync();
       const enrolled = await LocalAuthentication.isEnrolledAsync();
@@ -111,23 +137,17 @@ export default function LoginScreen() {
         return;
       }
 
-      // Biometric passed — refresh the persisted session to ensure it's valid
-      // and the auth store is synced before navigating.
+      // Biometric passed -- refresh the persisted session to ensure it's valid
       const { data: refreshData, error: refreshError } =
         await supabase.auth.refreshSession();
 
       if (refreshError || !refreshData.session) {
-        // Session expired or not found — fall back to manual login
         setError('Session expired. Please log in with your email and password.');
         setIsLoading(false);
         return;
       }
 
-      // Session is refreshed and auth store listener will pick it up.
-      // Small delay to let the onAuthStateChange listener sync the Zustand store.
       await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Session is valid — navigate to main
       router.replace('/(main)/venues');
     } catch {
       setError('Biometric authentication failed. Please try again.');
@@ -153,10 +173,11 @@ export default function LoginScreen() {
         return;
       }
 
-      // Save email for future biometric login
-      await SecureStore.setItemAsync(BIOMETRIC_EMAIL_KEY, email.trim());
+      // Save email for future biometric login (native only)
+      if (Platform.OS !== 'web') {
+        await SecureStore.setItemAsync(BIOMETRIC_EMAIL_KEY, email.trim());
+      }
 
-      // On success, the auth store listener picks up the session.
       router.replace('/(main)/venues');
     } catch {
       setError('An unexpected error occurred. Please try again.');
@@ -167,89 +188,114 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-dark"
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}
     >
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={{
           flexGrow: 1,
           paddingTop: insets.top,
-          paddingBottom: insets.bottom + 24,
+          paddingBottom: 24,
         }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {/* Back button */}
-        <Pressable
-          onPress={() => router.back()}
-          className="px-6 pt-4 pb-2 self-start active:opacity-60"
+        <AnimatedPressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            router.back();
+          }}
+          onPressIn={() => {
+            backScale.value = withSpring(0.93, springs.button);
+          }}
+          onPressOut={() => {
+            backScale.value = withSpring(1, springs.button);
+          }}
+          style={[styles.backButton, backAnimStyle]}
           hitSlop={16}
         >
-          <Text className="text-brand text-base">{'\u2190'} Back</Text>
-        </Pressable>
+          <ArrowLeft size={20} color={colors.text.primary} strokeWidth={2} />
+        </AnimatedPressable>
 
-        <Animated.View
-          entering={FadeIn.duration(400)}
-          className="flex-1 px-6 pt-6"
-        >
+        <View style={styles.content}>
           {/* Header */}
-          <Text className="text-3xl font-bold text-white">Welcome Back</Text>
-          <Text className="text-base text-white/50 mt-2">
-            Log in to start ordering
-          </Text>
+          <Animated.View entering={FadeInDown.duration(400).delay(100)}>
+            <Image
+              source={require('../../assets/app_logo.png')}
+              style={{ width: 56, height: 56, alignSelf: 'center', marginBottom: 20 }}
+              resizeMode="contain"
+            />
+            <Text style={[typography.display, { color: colors.text.primary }]}>
+              Welcome Back
+            </Text>
+            <Text
+              style={[
+                typography.body,
+                { color: colors.text.secondary, marginTop: 8 },
+              ]}
+            >
+              Log in to start ordering
+            </Text>
+          </Animated.View>
 
           {/* Error banner */}
           {error && (
-            <Animated.View
-              entering={FadeIn.duration(200)}
-              className="mt-6 rounded-xl bg-red-500/15 border border-red-500/30 px-4 py-3"
-            >
-              <Text className="text-red-400 text-sm">{error}</Text>
+            <Animated.View entering={FadeIn.duration(200)} style={{ marginTop: 24 }}>
+              <GlassCard
+                style={{
+                  borderColor: 'rgba(248,113,113,0.3)',
+                  borderWidth: 1,
+                  backgroundColor: colors.status.dangerMuted,
+                }}
+              >
+                <Text style={[typography.label, { color: colors.status.danger }]}>
+                  {error}
+                </Text>
+              </GlassCard>
             </Animated.View>
           )}
 
           {/* Biometric login button */}
           {biometricAvailable && hasPreviousLogin && (
-            <Pressable
-              onPress={handleBiometricLogin}
-              disabled={isLoading}
-              className={`mt-8 w-full flex-row items-center justify-center rounded-2xl py-4 border-2 border-brand ${
-                isLoading ? 'opacity-40' : 'active:opacity-80'
-              }`}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#f59e0b" size="small" />
-              ) : (
-                <Text className="text-lg font-bold text-brand">
-                  Log in with {biometricType}
-                </Text>
-              )}
-            </Pressable>
+            <Animated.View entering={FadeInDown.duration(400).delay(200)} style={{ marginTop: 32 }}>
+              <GoldButton
+                label={`Log in with ${biometricType}`}
+                onPress={handleBiometricLogin}
+                disabled={isLoading}
+                loading={isLoading}
+                variant="secondary"
+              />
+            </Animated.View>
           )}
 
           {/* Divider (shown when biometric is available) */}
           {biometricAvailable && hasPreviousLogin && (
-            <View className="flex-row items-center mt-6">
-              <View className="flex-1 h-px bg-white/10" />
-              <Text className="mx-4 text-sm text-white/30">or</Text>
-              <View className="flex-1 h-px bg-white/10" />
-            </View>
+            <Animated.View
+              entering={FadeInDown.duration(300).delay(250)}
+              style={styles.dividerRow}
+            >
+              <View style={styles.dividerLine} />
+              <Text style={[typography.caption, { color: colors.text.tertiary, marginHorizontal: 16 }]}>
+                or
+              </Text>
+              <View style={styles.dividerLine} />
+            </Animated.View>
           )}
 
           {/* Form fields */}
           <View
-            className={
-              biometricAvailable && hasPreviousLogin ? 'mt-6' : 'mt-8'
-            }
+            style={{
+              marginTop: biometricAvailable && hasPreviousLogin ? 24 : 32,
+            }}
           >
             {/* Email */}
-            <View>
-              <Text className="text-sm text-white/70 mb-2">Email</Text>
-              <TextInput
-                className="bg-dark-700 rounded-xl px-4 py-3.5 text-white text-base"
+            <Animated.View entering={FadeInDown.duration(400).delay(300)}>
+              <GlassInput
+                label="Email"
                 placeholder="you@example.com"
-                placeholderTextColor="rgba(255,255,255,0.25)"
                 value={email}
                 onChangeText={setEmail}
                 onBlur={() => setTouched((t) => ({ ...t, email: true }))}
@@ -259,90 +305,125 @@ export default function LoginScreen() {
                 autoCorrect={false}
                 returnKeyType="next"
                 editable={!isLoading}
+                error={emailError ?? emailEmpty}
               />
-              {(emailError || emailEmpty) && (
-                <Text className="text-red-400 text-xs mt-1">
-                  {emailError ?? emailEmpty}
-                </Text>
-              )}
-            </View>
+            </Animated.View>
 
             {/* Password */}
-            <View className="mt-5">
-              <Text className="text-sm text-white/70 mb-2">Password</Text>
-              <View className="relative">
-                <TextInput
-                  className="bg-dark-700 rounded-xl px-4 py-3.5 pr-16 text-white text-base"
-                  placeholder="Enter your password"
-                  placeholderTextColor="rgba(255,255,255,0.25)"
-                  value={password}
-                  onChangeText={setPassword}
-                  onBlur={() => setTouched((t) => ({ ...t, password: true }))}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoComplete="current-password"
-                  autoCorrect={false}
-                  returnKeyType="done"
-                  editable={!isLoading}
-                  onSubmitEditing={handleLogin}
-                />
-                <Pressable
-                  onPress={() => setShowPassword((v) => !v)}
-                  className="absolute right-4 top-0 bottom-0 justify-center active:opacity-60"
-                  hitSlop={8}
-                >
-                  <Text className="text-brand text-sm font-medium">
-                    {showPassword ? 'Hide' : 'Show'}
-                  </Text>
-                </Pressable>
-              </View>
-              {passwordEmpty && (
-                <Text className="text-red-400 text-xs mt-1">
-                  {passwordEmpty}
-                </Text>
-              )}
-            </View>
+            <Animated.View
+              entering={FadeInDown.duration(400).delay(400)}
+              style={{ marginTop: 20 }}
+            >
+              <GlassInput
+                label="Password"
+                placeholder="Enter your password"
+                value={password}
+                onChangeText={setPassword}
+                onBlur={() => setTouched((t) => ({ ...t, password: true }))}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoComplete="current-password"
+                autoCorrect={false}
+                returnKeyType="done"
+                editable={!isLoading}
+                onSubmitEditing={handleLogin}
+                error={passwordEmpty}
+                rightAction={{
+                  label: showPassword ? 'Hide' : 'Show',
+                  onPress: () => setShowPassword((v) => !v),
+                }}
+              />
+            </Animated.View>
 
             {/* Forgot password */}
-            <Pressable
-              onPress={() => router.push('/(auth)/forgot-password')}
-              className="mt-3 self-end active:opacity-60"
-              disabled={isLoading}
-            >
-              <Text className="text-sm text-brand">Forgot password?</Text>
-            </Pressable>
+            <Animated.View entering={FadeInDown.duration(400).delay(450)}>
+              <Pressable
+                onPress={() => router.push('/(auth)/forgot-password')}
+                style={styles.forgotLink}
+                disabled={isLoading}
+              >
+                <Text style={[typography.buttonSmall, { color: colors.gold[500] }]}>
+                  Forgot password?
+                </Text>
+              </Pressable>
+            </Animated.View>
           </View>
 
-          {/* Submit button */}
-          <Pressable
-            onPress={handleLogin}
-            disabled={!isFormValid || isLoading}
-            className={`mt-8 w-full items-center justify-center rounded-2xl py-4 ${
-              isFormValid && !isLoading
-                ? 'bg-brand active:opacity-80'
-                : 'bg-brand/40'
-            }`}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#1a1a2e" size="small" />
-            ) : (
-              <Text className="text-lg font-bold text-dark">Log In</Text>
-            )}
-          </Pressable>
-
-          {/* Register link */}
-          <Pressable
-            onPress={() => router.push('/(auth)/register')}
-            className="mt-6 active:opacity-60"
-            disabled={isLoading}
-          >
-            <Text className="text-sm text-white/50 text-center">
-              Don&apos;t have an account?{' '}
-              <Text className="text-brand font-medium">Sign up</Text>
-            </Text>
-          </Pressable>
-        </Animated.View>
+        </View>
       </ScrollView>
+
+      {/* Fixed bottom CTAs */}
+      <View style={[styles.fixedBottom, { paddingBottom: insets.bottom + 16 }]}>
+        <GoldButton
+          label="Log In"
+          onPress={handleLogin}
+          disabled={!isFormValid || isLoading}
+          loading={isLoading}
+        />
+        <Pressable
+          onPress={() => router.push('/(auth)/register')}
+          style={styles.bottomLink}
+          disabled={isLoading}
+        >
+          <Text
+            style={[
+              typography.label,
+              { color: colors.text.secondary, textAlign: 'center' },
+            ]}
+          >
+            Don't have an account?{' '}
+            <Text style={{ color: colors.gold[500] }}>Sign up</Text>
+          </Text>
+        </Pressable>
+      </View>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.glass.surface,
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.screenPadding,
+    marginTop: 12,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 24,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.glass.border,
+  },
+  forgotLink: {
+    alignSelf: 'flex-end',
+    marginTop: 12,
+    paddingVertical: 4,
+  },
+  fixedBottom: {
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 12,
+    backgroundColor: colors.bg.primary,
+  },
+  bottomLink: {
+    marginTop: 16,
+    paddingVertical: 8,
+  },
+});

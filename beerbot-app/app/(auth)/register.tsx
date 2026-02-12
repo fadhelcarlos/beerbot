@@ -2,12 +2,12 @@ import { useState, useCallback } from 'react';
 import {
   View,
   Text,
-  TextInput,
+  Image,
   Pressable,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  ActivityIndicator,
+  StyleSheet,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,9 +15,23 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withSpring,
+  FadeInDown,
   FadeIn,
 } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ArrowLeft } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import { supabase } from '@/lib/supabase';
+import { GlassCard, GlassInput, GoldButton } from '@/components/ui';
+import {
+  colors,
+  typography,
+  spacing,
+  radius,
+  springs,
+  goldGradient,
+} from '@/lib/theme';
 
 // --- Validation helpers ---
 
@@ -40,10 +54,28 @@ function getPasswordStrength(password: string): PasswordStrength {
   return 'weak';
 }
 
-const STRENGTH_CONFIG: Record<PasswordStrength, { label: string; color: string; width: string }> = {
-  weak: { label: 'Weak', color: '#ef4444', width: '33%' },
-  medium: { label: 'Medium', color: '#f59e0b', width: '66%' },
-  strong: { label: 'Strong', color: '#22c55e', width: '100%' },
+const STRENGTH_CONFIG: Record<
+  PasswordStrength,
+  { label: string; color: string; width: number; gradientColors: [string, string] }
+> = {
+  weak: {
+    label: 'Weak',
+    color: colors.status.danger,
+    width: 33,
+    gradientColors: ['#F87171', '#EF4444'],
+  },
+  medium: {
+    label: 'Medium',
+    color: colors.gold[500],
+    width: 66,
+    gradientColors: [colors.gold[400], colors.gold[600]],
+  },
+  strong: {
+    label: 'Strong',
+    color: colors.status.success,
+    width: 100,
+    gradientColors: ['#34D399', '#22C55E'],
+  },
 };
 
 function mapSupabaseError(message: string): string {
@@ -66,29 +98,55 @@ function PasswordStrengthBar({ password }: { password: string }) {
   const config = STRENGTH_CONFIG[strength];
 
   const barWidth = useSharedValue(0);
-  const targetWidth = strength === 'weak' ? 33 : strength === 'medium' ? 66 : 100;
+  const targetWidth = config.width;
   barWidth.value = withTiming(targetWidth, { duration: 300 });
 
   const animatedBarStyle = useAnimatedStyle(() => ({
     width: `${barWidth.value}%`,
-    backgroundColor: config.color,
   }));
 
   if (password.length === 0) return null;
 
   return (
-    <View className="mt-2">
-      <View className="h-1.5 w-full rounded-full bg-dark-600 overflow-hidden">
-        <Animated.View
-          style={[{ height: '100%', borderRadius: 9999 }, animatedBarStyle]}
-        />
+    <View style={strengthStyles.container}>
+      <View style={strengthStyles.track}>
+        <Animated.View style={[strengthStyles.barOuter, animatedBarStyle]}>
+          <LinearGradient
+            colors={config.gradientColors}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={strengthStyles.gradient}
+          />
+        </Animated.View>
       </View>
-      <Text style={{ color: config.color }} className="text-xs mt-1">
+      <Text style={[typography.caption, { color: config.color, marginTop: 4 }]}>
         {config.label}
       </Text>
     </View>
   );
 }
+
+const strengthStyles = StyleSheet.create({
+  container: {
+    marginTop: 8,
+  },
+  track: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.glass.surface,
+    overflow: 'hidden',
+  },
+  barOuter: {
+    height: '100%',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  gradient: {
+    flex: 1,
+  },
+});
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 // --- Main screen ---
 
@@ -117,6 +175,12 @@ export default function RegisterScreen() {
     isValidEmail(email) &&
     password.length >= 8;
 
+  // Back button scale animation
+  const backScale = useSharedValue(1);
+  const backAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: backScale.value }],
+  }));
+
   const handleRegister = useCallback(async () => {
     if (!isFormValid || isLoading) return;
 
@@ -140,7 +204,6 @@ export default function RegisterScreen() {
       }
 
       // On success, the auth store listener will pick up the session.
-      // Navigate to venue selection.
       router.replace('/(main)/venues');
     } catch {
       setError('An unexpected error occurred. Please try again.');
@@ -151,53 +214,83 @@ export default function RegisterScreen() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-dark"
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}
     >
       <ScrollView
-        contentContainerStyle={{ flexGrow: 1, paddingTop: insets.top, paddingBottom: insets.bottom + 24 }}
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingTop: insets.top,
+          paddingBottom: 24,
+        }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {/* Back button */}
-        <Pressable
-          onPress={() => router.back()}
-          className="px-6 pt-4 pb-2 self-start active:opacity-60"
+        <AnimatedPressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            router.back();
+          }}
+          onPressIn={() => {
+            backScale.value = withSpring(0.93, springs.button);
+          }}
+          onPressOut={() => {
+            backScale.value = withSpring(1, springs.button);
+          }}
+          style={[styles.backButton, backAnimStyle]}
           hitSlop={16}
         >
-          <Text className="text-brand text-base">← Back</Text>
-        </Pressable>
+          <ArrowLeft size={20} color={colors.text.primary} strokeWidth={2} />
+        </AnimatedPressable>
 
-        <Animated.View
-          entering={FadeIn.duration(400)}
-          className="flex-1 px-6 pt-6"
-        >
+        <View style={styles.content}>
           {/* Header */}
-          <Text className="text-3xl font-bold text-white">Create Account</Text>
-          <Text className="text-base text-white/50 mt-2">
-            Sign up to start ordering beer
-          </Text>
+          <Animated.View entering={FadeInDown.duration(400).delay(100)}>
+            <Image
+              source={require('../../assets/app_logo.png')}
+              style={{ width: 56, height: 56, alignSelf: 'center', marginBottom: 20 }}
+              resizeMode="contain"
+            />
+            <Text style={[typography.display, { color: colors.text.primary }]}>
+              Create Account
+            </Text>
+            <Text
+              style={[
+                typography.body,
+                { color: colors.text.secondary, marginTop: 8 },
+              ]}
+            >
+              Sign up to start ordering beer
+            </Text>
+          </Animated.View>
 
           {/* Error banner */}
           {error && (
-            <Animated.View
-              entering={FadeIn.duration(200)}
-              className="mt-6 rounded-xl bg-red-500/15 border border-red-500/30 px-4 py-3"
-            >
-              <Text className="text-red-400 text-sm">{error}</Text>
+            <Animated.View entering={FadeIn.duration(200)} style={{ marginTop: 24 }}>
+              <GlassCard
+                style={{
+                  borderColor: 'rgba(248,113,113,0.3)',
+                  borderWidth: 1,
+                  backgroundColor: colors.status.dangerMuted,
+                }}
+              >
+                <Text style={[typography.label, { color: colors.status.danger }]}>
+                  {error}
+                </Text>
+              </GlassCard>
             </Animated.View>
           )}
 
           {/* Form fields */}
-          <View className="mt-8">
+          <View style={{ marginTop: 32 }}>
             {/* Full Name */}
-            <View>
-              <Text className="text-sm text-white/70 mb-2">Full Name</Text>
-              <TextInput
-                className="bg-dark-700 rounded-xl px-4 py-3.5 text-white text-base"
+            <Animated.View entering={FadeInDown.duration(400).delay(200)}>
+              <GlassInput
+                label="Full Name"
                 placeholder="John Doe"
-                placeholderTextColor="rgba(255,255,255,0.25)"
                 value={fullName}
                 onChangeText={setFullName}
                 onBlur={() => setTouched((t) => ({ ...t, name: true }))}
@@ -205,19 +298,18 @@ export default function RegisterScreen() {
                 autoComplete="name"
                 returnKeyType="next"
                 editable={!isLoading}
+                error={nameError}
               />
-              {nameError && (
-                <Text className="text-red-400 text-xs mt-1">{nameError}</Text>
-              )}
-            </View>
+            </Animated.View>
 
             {/* Email */}
-            <View className="mt-5">
-              <Text className="text-sm text-white/70 mb-2">Email</Text>
-              <TextInput
-                className="bg-dark-700 rounded-xl px-4 py-3.5 text-white text-base"
+            <Animated.View
+              entering={FadeInDown.duration(400).delay(300)}
+              style={{ marginTop: 20 }}
+            >
+              <GlassInput
+                label="Email"
                 placeholder="you@example.com"
-                placeholderTextColor="rgba(255,255,255,0.25)"
                 value={email}
                 onChangeText={setEmail}
                 onBlur={() => setTouched((t) => ({ ...t, email: true }))}
@@ -227,76 +319,98 @@ export default function RegisterScreen() {
                 autoCorrect={false}
                 returnKeyType="next"
                 editable={!isLoading}
+                error={emailError ?? emailEmpty}
               />
-              {(emailError || emailEmpty) && (
-                <Text className="text-red-400 text-xs mt-1">{emailError ?? emailEmpty}</Text>
-              )}
-            </View>
+            </Animated.View>
 
             {/* Password */}
-            <View className="mt-5">
-              <Text className="text-sm text-white/70 mb-2">Password</Text>
-              <View className="relative">
-                <TextInput
-                  className="bg-dark-700 rounded-xl px-4 py-3.5 pr-16 text-white text-base"
-                  placeholder="Min 8 characters"
-                  placeholderTextColor="rgba(255,255,255,0.25)"
-                  value={password}
-                  onChangeText={setPassword}
-                  onBlur={() => setTouched((t) => ({ ...t, password: true }))}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoComplete="new-password"
-                  autoCorrect={false}
-                  returnKeyType="done"
-                  editable={!isLoading}
-                  onSubmitEditing={handleRegister}
-                />
-                <Pressable
-                  onPress={() => setShowPassword((v) => !v)}
-                  className="absolute right-4 top-0 bottom-0 justify-center active:opacity-60"
-                  hitSlop={8}
-                >
-                  <Text className="text-brand text-sm font-medium">
-                    {showPassword ? 'Hide' : 'Show'}
-                  </Text>
-                </Pressable>
-              </View>
-              {(passwordError || passwordEmpty) && (
-                <Text className="text-red-400 text-xs mt-1">{passwordError ?? passwordEmpty}</Text>
-              )}
+            <Animated.View
+              entering={FadeInDown.duration(400).delay(400)}
+              style={{ marginTop: 20 }}
+            >
+              <GlassInput
+                label="Password"
+                placeholder="Min 8 characters"
+                value={password}
+                onChangeText={setPassword}
+                onBlur={() => setTouched((t) => ({ ...t, password: true }))}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoComplete="new-password"
+                autoCorrect={false}
+                returnKeyType="done"
+                editable={!isLoading}
+                onSubmitEditing={handleRegister}
+                error={passwordError ?? passwordEmpty}
+                rightAction={{
+                  label: showPassword ? 'Hide' : 'Show',
+                  onPress: () => setShowPassword((v) => !v),
+                }}
+              />
               <PasswordStrengthBar password={password} />
-            </View>
+            </Animated.View>
           </View>
 
-          {/* Submit button */}
-          <Pressable
-            onPress={handleRegister}
-            disabled={!isFormValid || isLoading}
-            className={`mt-8 w-full items-center justify-center rounded-2xl py-4 ${
-              isFormValid && !isLoading ? 'bg-brand active:opacity-80' : 'bg-brand/40'
-            }`}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#1a1a2e" size="small" />
-            ) : (
-              <Text className="text-lg font-bold text-dark">Create Account</Text>
-            )}
-          </Pressable>
-
-          {/* Login link */}
-          <Pressable
-            onPress={() => router.push('/(auth)/login')}
-            className="mt-6 active:opacity-60"
-            disabled={isLoading}
-          >
-            <Text className="text-sm text-white/50 text-center">
-              Already have an account?{' '}
-              <Text className="text-brand font-medium">Log in</Text>
-            </Text>
-          </Pressable>
-        </Animated.View>
+        </View>
       </ScrollView>
+
+      {/* Fixed bottom CTAs */}
+      <View style={[styles.fixedBottom, { paddingBottom: insets.bottom + 16 }]}>
+        <GoldButton
+          label="Create Account"
+          onPress={handleRegister}
+          disabled={!isFormValid || isLoading}
+          loading={isLoading}
+        />
+        <Pressable
+          onPress={() => router.push('/(auth)/login')}
+          style={styles.bottomLink}
+          disabled={isLoading}
+        >
+          <Text
+            style={[
+              typography.label,
+              { color: colors.text.secondary, textAlign: 'center' },
+            ]}
+          >
+            Already have an account?{' '}
+            <Text style={{ color: colors.gold[500] }}>Log in</Text>
+          </Text>
+        </Pressable>
+      </View>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.glass.surface,
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.screenPadding,
+    marginTop: 12,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 24,
+  },
+  fixedBottom: {
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 12,
+    backgroundColor: colors.bg.primary,
+  },
+  bottomLink: {
+    marginTop: 16,
+    paddingVertical: 8,
+  },
+});

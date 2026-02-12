@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react';
 import {
   View,
   Text,
+  Image,
   Pressable,
   useWindowDimensions,
   StyleSheet,
@@ -15,28 +16,37 @@ import Animated, {
   withSpring,
   interpolate,
   Extrapolation,
+  FadeInDown,
+  FadeInUp,
   type SharedValue,
 } from 'react-native-reanimated';
-import LottieView from 'lottie-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import { GoldButton } from '@/components/ui';
+import {
+  colors,
+  typography,
+  spacing,
+  springs,
+} from '@/lib/theme';
 
 const SLIDES = [
   {
     title: 'Order Your Beer',
     description: 'Browse taps at your favorite venues and place your order right from your phone.',
-    icon: '🍺',
+    image: require('../../assets/beer_icon.png'),
   },
   {
     title: 'Verify Your Age',
     description: 'Quick one-time age verification keeps the process safe and legal.',
-    icon: '🪪',
+    image: require('../../assets/verify_icon.png'),
   },
   {
     title: 'Scan & Pour',
     description: 'Scan the QR code at the tap and pour your perfect pint. Cheers!',
-    icon: '📲',
+    image: require('../../assets/qr_icon.png'),
   },
-] as const;
+];
 
 function Dot({ index, activeIndex }: { index: number; activeIndex: SharedValue<number> }) {
   const animatedStyle = useAnimatedStyle(() => {
@@ -87,16 +97,38 @@ function SlideContent({
       [0, 1, 0],
       Extrapolation.CLAMP,
     );
-    return { transform: [{ translateY }], opacity };
+    const scale = interpolate(
+      scrollX.value,
+      inputRange,
+      [0.85, 1, 0.85],
+      Extrapolation.CLAMP,
+    );
+    return { transform: [{ translateY }, { scale }], opacity };
   });
 
   return (
     <Animated.View style={[{ width }, styles.slideContent, animatedStyle]}>
-      <Text style={styles.slideIcon}>{slide.icon}</Text>
-      <Text className="text-2xl font-bold text-white text-center mt-6">
+      <Image source={slide.image} style={styles.slideIcon} resizeMode="contain" />
+      <Text
+        style={[
+          typography.title,
+          { color: colors.text.primary, textAlign: 'center', marginTop: 16 },
+        ]}
+      >
         {slide.title}
       </Text>
-      <Text className="text-base text-white/60 text-center mt-3 px-8 leading-6">
+      <Text
+        style={[
+          typography.body,
+          {
+            color: colors.text.secondary,
+            textAlign: 'center',
+            marginTop: 8,
+            paddingHorizontal: 32,
+            lineHeight: 22,
+          },
+        ]}
+      >
         {slide.description}
       </Text>
     </Animated.View>
@@ -112,19 +144,19 @@ export default function WelcomeScreen() {
   const activeIndex = useSharedValue(0);
   const currentIndex = useSharedValue(0);
 
-  const lottieOpacity = useSharedValue(0);
+  const heroOpacity = useSharedValue(0);
 
   useEffect(() => {
-    lottieOpacity.value = withTiming(1, { duration: 800 });
-  }, [lottieOpacity]);
+    heroOpacity.value = withTiming(1, { duration: 800 });
+  }, [heroOpacity]);
 
   const goToSlide = useCallback(
     (index: number) => {
       'worklet';
       const clamped = Math.max(0, Math.min(index, SLIDES.length - 1));
       currentIndex.value = clamped;
-      activeIndex.value = withSpring(clamped, { damping: 15, stiffness: 150 });
-      scrollX.value = withSpring(clamped * width, { damping: 15, stiffness: 150 });
+      activeIndex.value = withSpring(clamped, springs.gentle);
+      scrollX.value = withSpring(clamped * width, springs.gentle);
     },
     [activeIndex, currentIndex, scrollX, width],
   );
@@ -156,44 +188,47 @@ export default function WelcomeScreen() {
     transform: [{ translateX: -scrollX.value }],
   }));
 
-  const lottieAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: lottieOpacity.value,
+  const heroAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: heroOpacity.value,
   }));
 
   const navigateToRegister = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     router.push('/(auth)/register');
   }, [router]);
 
   const navigateToLogin = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     router.push('/(auth)/login');
   }, [router]);
 
   return (
     <View
-      className="flex-1 bg-dark"
-      style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+      style={[
+        styles.container,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}
     >
-      {/* Lottie hero area */}
+      {/* Hero — logo + tagline */}
       <Animated.View
-        style={[styles.lottieContainer, lottieAnimatedStyle]}
-        className="items-center justify-center"
+        style={[styles.heroContainer, heroAnimatedStyle]}
+        entering={FadeInDown.duration(600).delay(100)}
       >
-        <View className="items-center justify-center" style={styles.lottieWrapper}>
-          <LottieView
-            autoPlay
-            loop
-            style={styles.lottie}
-            source={require('../../assets/welcome-animation.json')}
-          />
-        </View>
-        <Text className="text-4xl font-bold text-brand mt-2">BeerBot</Text>
-        <Text className="text-base text-white/50 mt-1">
+        <Image
+          source={require('../../assets/app_logo.png')}
+          style={styles.appLogo}
+          resizeMode="contain"
+        />
+        <Text style={styles.tagline}>
           Your self-serve beer companion
         </Text>
       </Animated.View>
 
       {/* Carousel */}
-      <View style={styles.carouselArea}>
+      <Animated.View
+        style={styles.carouselArea}
+        entering={FadeInUp.duration(500).delay(300)}
+      >
         <GestureDetector gesture={panGesture}>
           <Animated.View style={styles.carouselOuter}>
             <Animated.View
@@ -222,43 +257,55 @@ export default function WelcomeScreen() {
             <Dot key={i} index={i} activeIndex={activeIndex} />
           ))}
         </View>
-      </View>
+      </Animated.View>
 
       {/* Bottom CTAs */}
-      <View className="px-6 pb-4" style={styles.ctaArea}>
-        <Pressable
+      <Animated.View
+        style={[styles.ctaArea, { paddingHorizontal: spacing.screenPadding }]}
+        entering={FadeInUp.duration(500).delay(500)}
+      >
+        <GoldButton
+          label="Get Started"
           onPress={navigateToRegister}
-          className="w-full items-center justify-center rounded-2xl bg-brand py-4 active:opacity-80"
-        >
-          <Text className="text-lg font-bold text-dark">Get Started</Text>
-        </Pressable>
+        />
 
-        <Pressable onPress={navigateToLogin} className="mt-4 active:opacity-60">
-          <Text className="text-sm text-white/60 text-center">
+        <Pressable onPress={navigateToLogin} style={styles.loginLink}>
+          <Text
+            style={[
+              typography.label,
+              { color: colors.text.secondary, textAlign: 'center' },
+            ]}
+          >
             I already have an account
           </Text>
         </Pressable>
-      </View>
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  lottieContainer: {
-    flex: 3,
+  container: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+  },
+  heroContainer: {
+    flex: 2,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  lottieWrapper: {
-    width: 180,
-    height: 180,
+  appLogo: {
+    width: 200,
+    height: 200,
   },
-  lottie: {
-    width: '100%',
-    height: '100%',
+  tagline: {
+    color: colors.text.secondary,
+    fontSize: 15,
+    letterSpacing: 0.3,
+    marginTop: 8,
   },
   carouselArea: {
-    flex: 2,
+    flex: 3,
   },
   carouselOuter: {
     flex: 1,
@@ -274,7 +321,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   slideIcon: {
-    fontSize: 56,
+    width: 100,
+    height: 100,
   },
   dotsRow: {
     flexDirection: 'row',
@@ -286,9 +334,14 @@ const styles = StyleSheet.create({
   dot: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#f59e0b',
+    backgroundColor: colors.gold[500],
   },
   ctaArea: {
     paddingTop: 8,
+    paddingBottom: 16,
+  },
+  loginLink: {
+    marginTop: 16,
+    paddingVertical: 8,
   },
 });

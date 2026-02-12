@@ -10,7 +10,7 @@ import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '@/lib/stores/auth-store';
-import { getStripePublishableKey } from '@/lib/api/payments';
+import { getStripePublishableKey, isStripeMockMode } from '@/lib/api/payments';
 import { queryClient } from '@/lib/query-client';
 import { supabase } from '@/lib/supabase';
 import { isSessionExpiredError } from '@/lib/utils/error-handler';
@@ -169,14 +169,25 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function MaybeStripeProvider({ children }: { children: React.ReactElement }) {
+  if (isStripeMockMode() || !getStripePublishableKey()) {
+    return children;
+  }
+  return (
+    <StripeProvider
+      publishableKey={getStripePublishableKey()}
+      merchantIdentifier="merchant.com.beerbot.app"
+      urlScheme="beerbot"
+    >
+      {children}
+    </StripeProvider>
+  );
+}
+
 export default function RootLayout() {
   return (
     <ErrorBoundary>
-      <StripeProvider
-        publishableKey={getStripePublishableKey()}
-        merchantIdentifier="merchant.com.beerbot.app"
-        urlScheme="beerbot"
-      >
+      <MaybeStripeProvider>
         <QueryClientProvider client={queryClient}>
           <StatusBar style="light" />
           <View style={{ flex: 1 }} className="bg-dark">
@@ -188,7 +199,7 @@ export default function RootLayout() {
             </View>
           </View>
         </QueryClientProvider>
-      </StripeProvider>
+      </MaybeStripeProvider>
     </ErrorBoundary>
   );
 }

@@ -919,3 +919,53 @@ after each iteration and it's included in prompts for context.
   - The `TAB_ICONS` record pattern is cleaner than nested ternaries when the tab bar has 3+ tabs
 ---
 
+## 2026-02-11 - US-026
+- What was implemented:
+  - Created `app/(main)/profile/payment-methods.tsx` — full Saved Payment Methods management screen:
+    - Fetches saved payment methods from Stripe via Edge Function (list customer payment methods)
+    - Displays card list: card brand icon, last 4 digits, expiry date (MM/YY format)
+    - Default payment method marked with amber "Default" badge and brand-colored card border
+    - Explicit "Remove" button on each card with confirmation dialog before deleting
+    - "Set as Default" button on non-default cards to change the customer's default payment method
+    - Delete calls Stripe `paymentMethods.detach()` via Edge Function
+    - "Add Payment Method" button fixed at bottom opens Stripe PaymentSheet (SetupIntent flow) for new card entry
+    - Set as default option calls Stripe `customers.update()` with `invoice_settings.default_payment_method` via Edge Function
+    - Empty state: card emoji + "No saved payment methods. Add one for faster checkout."
+    - Pull-to-refresh support via FlatList `onRefresh`
+    - Loading and error states
+    - TanStack Query for data fetching + mutations with cache invalidation
+    - BeerBot dark theme, FadeIn/FadeInDown staggered entrance animations, safe area insets
+  - Created `supabase/functions/payment-methods/index.ts` (Deno Edge Function):
+    - Single function with action routing: `list`, `detach`, `set_default`, `create_setup_intent`
+    - `list`: fetches Stripe customer's card payment methods, includes default PM detection via `invoice_settings.default_payment_method`
+    - `detach`: verifies PM belongs to customer, then calls `stripe.paymentMethods.detach()`
+    - `set_default`: verifies PM ownership, calls `stripe.customers.update()` with `invoice_settings.default_payment_method`
+    - `create_setup_intent`: creates/retrieves Stripe customer, creates SetupIntent + ephemeral key for mobile SDK
+    - Same auth pattern as other Edge Functions (JWT user client + service_role admin client)
+  - Created `lib/api/payment-methods.ts` — typed API layer:
+    - `listPaymentMethods()` — fetches saved cards via Edge Function
+    - `detachPaymentMethod(id)` — removes a card
+    - `setDefaultPaymentMethod(id)` — sets default
+    - `createSetupIntent()` — creates SetupIntent for adding new card
+  - Updated `types/api.ts`:
+    - Added `SavedPaymentMethod`, `ListPaymentMethodsResponse`, `CreateSetupIntentResponse` interfaces
+  - Updated `app/(main)/profile/index.tsx`:
+    - "Payment Methods" menu row now navigates to `/(main)/profile/payment-methods` instead of showing placeholder alert
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `app/(main)/profile/payment-methods.tsx` — saved payment methods management screen (new)
+  - `supabase/functions/payment-methods/index.ts` — Stripe payment methods Edge Function (new)
+  - `lib/api/payment-methods.ts` — typed payment methods API layer (new)
+  - `types/api.ts` — added `SavedPaymentMethod`, `ListPaymentMethodsResponse`, `CreateSetupIntentResponse`
+  - `app/(main)/profile/index.tsx` — updated Payment Methods row to navigate to new screen
+- **Learnings:**
+  - Stripe `SetupIntent` is the correct flow for saving a card without charging — `PaymentIntent` is for immediate charges, `SetupIntent` for future charges. Use `initPaymentSheet` with `setupIntentClientSecret` (not `paymentIntentClientSecret`) for the save-card flow.
+  - Stripe's `customers.retrieve()` returns `invoice_settings.default_payment_method` which can be a string ID or an expanded PaymentMethod object — must handle both cases when checking the default
+  - A single Edge Function with action routing (`action: 'list' | 'detach' | 'set_default' | 'create_setup_intent'`) is cleaner than separate functions for simple CRUD operations on the same resource
+  - `paymentMethods.detach(id)` removes the card from the customer in Stripe — the PM object still exists but becomes unattached and unusable
+  - `@stripe/stripe-react-native`'s `initPaymentSheet` supports `style: 'alwaysDark'` to match app theme
+  - For action routing Edge Functions, `req.json()` is called after auth to avoid parsing body on OPTIONS preflight requests
+  - Expo Router auto-discovers `profile/payment-methods.tsx` as a child route of the `profile` tab — no additional layout configuration needed
+---
+

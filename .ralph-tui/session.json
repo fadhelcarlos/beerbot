@@ -3,10 +3,10 @@
   "sessionId": "8a78899c-0ac9-4034-bd77-4853b62c53b6",
   "status": "running",
   "startedAt": "2026-02-12T00:29:48.625Z",
-  "updatedAt": "2026-02-12T02:12:18.685Z",
-  "currentIteration": 24,
+  "updatedAt": "2026-02-12T02:16:28.843Z",
+  "currentIteration": 25,
   "maxIterations": 50,
-  "tasksCompleted": 24,
+  "tasksCompleted": 25,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -161,8 +161,8 @@
       {
         "id": "US-025",
         "title": "Build Profile screen with account management",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "US-026",
@@ -430,6 +430,16 @@
       "durationMs": 291790,
       "startedAt": "2026-02-12T02:03:51.729Z",
       "endedAt": "2026-02-12T02:08:43.519Z"
+    },
+    {
+      "iteration": 25,
+      "status": "completed",
+      "taskId": "US-025",
+      "taskTitle": "Build Profile screen with account management",
+      "taskCompleted": true,
+      "durationMs": 213870,
+      "startedAt": "2026-02-12T02:08:44.790Z",
+      "endedAt": "2026-02-12T02:12:18.660Z"
     }
   ],
   "skippedTaskIds": [],

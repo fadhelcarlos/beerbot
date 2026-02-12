@@ -255,3 +255,27 @@ export interface PourCompleteResponse {
   error?: string;
   code?: string;
 }
+
+// ============================================================
+// Payment Methods
+// ============================================================
+
+export interface SavedPaymentMethod {
+  id: string;
+  brand: string;
+  last4: string;
+  exp_month: number;
+  exp_year: number;
+  is_default: boolean;
+}
+
+export interface ListPaymentMethodsResponse {
+  payment_methods: SavedPaymentMethod[];
+  default_payment_method: string | null;
+}
+
+export interface CreateSetupIntentResponse {
+  setup_intent_client_secret: string;
+  ephemeral_key: string;
+  customer_id: string;
+}

@@ -466,12 +466,7 @@ export default function ProfileScreen() {
                   icon={'\uD83D\uDCB3'}
                   label="Payment Methods"
                   subtitle="Manage your cards"
-                  onPress={() => {
-                    Alert.alert(
-                      'Payment Methods',
-                      'Payment method management will be available in a future update.',
-                    );
-                  }}
+                  onPress={() => router.push('/(main)/profile/payment-methods')}
                 />
                 <SectionDivider />
                 <MenuRow

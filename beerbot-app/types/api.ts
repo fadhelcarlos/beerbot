@@ -190,3 +190,54 @@ export interface CreatePaymentIntentResponse {
   customer_id: string;
   payment_intent_id: string;
 }
+
+// ============================================================
+// PLC Stub Endpoints (Pour Start / Pour Complete)
+// ============================================================
+
+export interface PourStartRequest {
+  order_id: string;
+  tap_id: string;
+  quantity: number;
+  pour_size_oz: number;
+  token: string;
+}
+
+export interface PourCommand {
+  order_id: string;
+  tap_id: string;
+  tap_number: number;
+  quantity: number;
+  pour_size_oz: number;
+  total_oz: number;
+  user_id: string;
+  venue_id: string;
+}
+
+export interface PourStartResponse {
+  success: boolean;
+  pour_command?: PourCommand;
+  error?: string;
+  code?: string;
+  correct_tap_id?: string;
+  correct_tap_number?: number;
+  oz_remaining?: number;
+  oz_required?: number;
+}
+
+export interface PourCompleteRequest {
+  order_id: string;
+  tap_id: string;
+  actual_oz_poured: number;
+}
+
+export interface PourCompleteResponse {
+  success: boolean;
+  order_id?: string;
+  status?: string;
+  actual_oz_poured?: number;
+  expected_oz?: number;
+  variance_oz?: number;
+  error?: string;
+  code?: string;
+}

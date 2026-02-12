@@ -484,3 +484,41 @@ after each iteration and it's included in prompts for context.
   - For scheduled Edge Function invocation, Supabase supports cron-based HTTP triggers or the function can be called by pg_cron via `pg_net` extension / Supabase scheduled functions feature
 ---
 
+## 2026-02-11 - US-011
+- What was implemented:
+  - Created `supabase/functions/pour-start/index.ts` (Deno Edge Function):
+    - Authenticates caller via service-role key comparison (not user JWT — PLC/Raspberry Pi backend uses service-role)
+    - Accepts payload: `{ order_id, tap_id, quantity, pour_size_oz, token }`
+    - Validates JWT token signature and expiration using `djwt` with HMAC-SHA256 (`QR_TOKEN_SECRET`)
+    - Validates `tap_id` matches the token's embedded `tap_id` — returns `WRONG_TAP` with correct tap number on mismatch
+    - Validates order exists, token matches stored `qr_code_token`, order status is `ready_to_redeem`
+    - Validates tap conditions: `temp_ok = true` (returns `TEMP_NOT_READY`) and `oz_remaining >= required` (returns `INVENTORY_LOW` with remaining/required amounts)
+    - On valid: transitions order `ready_to_redeem -> redeemed -> pouring` with optimistic locks
+    - Returns `pour_command` payload with tap_number, quantity, pour_size_oz, total_oz for PLC consumption
+    - Logs events to `order_events` (redeemed + pouring) and `admin_pour_logs`
+    - Full error code set: `EXPIRED`, `WRONG_TAP`, `ALREADY_REDEEMED`, `TEMP_NOT_READY`, `INVENTORY_LOW`, `ORDER_NOT_FOUND`, `INVALID_TOKEN`
+  - Created `supabase/functions/pour-complete/index.ts` (Deno Edge Function):
+    - Authenticates caller via service-role key comparison
+    - Accepts payload: `{ order_id, tap_id, actual_oz_poured }`
+    - Validates order exists, `tap_id` matches, order status is `pouring`
+    - Transitions order `pouring -> completed` with optimistic lock, sets `completed_at`
+    - Calculates pour variance (actual vs expected oz) for quality tracking
+    - Logs `completed` event to `order_events` with actual/expected/variance metadata
+    - Logs to `admin_pour_logs` with actual oz poured
+  - Updated `types/api.ts`:
+    - Added `PourStartRequest`, `PourCommand`, `PourStartResponse` interfaces
+    - Added `PourCompleteRequest`, `PourCompleteResponse` interfaces
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `supabase/functions/pour-start/index.ts` — PLC pour start stub Edge Function (new)
+  - `supabase/functions/pour-complete/index.ts` — PLC pour complete stub Edge Function (new)
+  - `types/api.ts` — added PLC stub request/response types
+- **Learnings:**
+  - Service-role authentication for machine-to-machine endpoints differs from user JWT auth: compare the provided Bearer token directly against `SUPABASE_SERVICE_ROLE_KEY` rather than calling `auth.getUser()`
+  - PLC endpoints don't need user identity — the order's `user_id` is already embedded in the order record and JWT token payload
+  - Two-phase status transitions (`ready_to_redeem -> redeemed -> pouring`) with optimistic locks on each step ensure atomic state progression and prevent race conditions from concurrent pour attempts
+  - `admin_pour_logs` table has a `NOT NULL` constraint on `admin_user_id` — for PLC-initiated pours, the order's `user_id` is used as a proxy since the PLC itself has no user identity
+  - Returning the `correct_tap_number` in `WRONG_TAP` errors lets the PLC display which tap the customer should go to — better UX than just an error code
+---
+

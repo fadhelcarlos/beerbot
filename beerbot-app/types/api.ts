@@ -64,6 +64,42 @@ export type OrderStatus =
   | 'cancelled'
   | 'refunded';
 
+// ============================================================
+// Verification
+// ============================================================
+
+export type VerificationAttemptStatus =
+  | 'pending'
+  | 'approved'
+  | 'declined'
+  | 'resubmit'
+  | 'expired'
+  | 'unknown';
+
+export interface VerificationAttempt {
+  id: string;
+  user_id: string;
+  session_id: string;
+  status: VerificationAttemptStatus;
+  created_at: string;
+}
+
+export interface VerificationSession {
+  session_url: string;
+  session_id: string;
+  session_token: string;
+}
+
+export interface VerificationStatus {
+  age_verified: boolean;
+  age_verification_ref: string | null;
+  age_verified_at: string | null;
+}
+
+// ============================================================
+// Orders
+// ============================================================
+
 export interface Order {
   id: string;
   user_id: string;

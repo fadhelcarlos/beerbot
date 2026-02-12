@@ -20,6 +20,8 @@ after each iteration and it's included in prompts for context.
 - **RLS pattern**: Public tables (venues, beers, taps, tap_pricing) use `TO anon, authenticated` SELECT. User-owned data (orders, order_events) filters by `auth.uid()`. Admin tables (admin_pour_logs) have no app-user policies — service_role only.
 - **Reanimated SharedValue type**: Import `type SharedValue` directly from `react-native-reanimated`, NOT `Animated.SharedValue` (the namespace doesn't export it in v4).
 - **API layer pattern**: `lib/api/{resource}.ts` — typed query functions using Supabase client, with RPC calls for computed queries and `.select()` with nested joins for relational data. Realtime subscriptions via `supabase.channel()` + `postgres_changes`.
+- **Edge Functions pattern**: `supabase/functions/{fn-name}/index.ts` — Deno runtime with ESM imports from `esm.sh`. Use two Supabase clients: user JWT client (for identity) + service_role client (for privileged writes). Must exclude `supabase/functions` from `tsconfig.json` (Deno != Node).
+- **Edge Function invocation**: `supabase.functions.invoke<T>(fnName, { method })` — auto-passes user's auth token. Returns typed `{ data, error }`.
 
 ---
 
@@ -179,5 +181,51 @@ after each iteration and it's included in prompts for context.
   - Haversine `acos()` can receive values slightly outside [-1, 1] due to floating-point precision — wrapping with `LEAST(1.0, GREATEST(-1.0, ...))` prevents `NaN`
   - Supabase realtime `postgres_changes` filter syntax: `venue_id=eq.${venueId}` — matches PostgREST filter format
   - `STABLE` volatility on the SQL function is correct since it only reads data and results are consistent within a transaction
+---
+
+## 2026-02-11 - US-009
+- What was implemented:
+  - Created `supabase/migrations/20260211300000_verification_attempts.sql`:
+    - `verification_attempts` table for rate limiting (user_id, session_id, status, created_at)
+    - Indexes on user_id and created_at for efficient rate limit queries
+    - RLS enabled: users can SELECT own attempts only; INSERT is service_role only (Edge Functions)
+  - Created `supabase/functions/create-verification-session/index.ts` (Deno Edge Function):
+    - Authenticates user via JWT from Authorization header
+    - Checks if user is already age-verified (returns 400 if so)
+    - Rate limits: max 5 verification attempts per user per 24-hour window (returns 429)
+    - Creates Veriff session via their REST API with user metadata and callback URL
+    - Logs attempt to `verification_attempts` table via service_role client
+    - Returns session URL, session ID, and session token to mobile app
+    - CORS headers for preflight OPTIONS requests
+  - Created `supabase/functions/verification-webhook/index.ts` (Deno Edge Function):
+    - Verifies webhook authenticity via HMAC-SHA256 signature (x-hmac-signature header)
+    - Handles Veriff decision codes: approved (9001), declined (9102), resubmit (9103), expired (9104)
+    - On approved: sets `users.age_verified = true`, `age_verification_ref = sessionId`, `age_verified_at = now()`
+    - On declined/resubmit/expired: updates attempt status only, does NOT modify user age_verified
+    - Does NOT store ID images or personal data — only status, timestamp, and reference ID
+  - Created `lib/api/verification.ts` with typed functions:
+    - `createVerificationSession()` — invokes create-verification-session Edge Function, returns `VerificationSession`
+    - `checkVerificationStatus()` — reads user profile from `users` table, returns `VerificationStatus`
+  - Updated `types/api.ts`:
+    - Added `VerificationAttemptStatus` union type
+    - Added `VerificationAttempt`, `VerificationSession`, `VerificationStatus` interfaces
+  - Updated `tsconfig.json` to exclude `supabase/functions` (Deno runtime, not Expo/Node)
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `supabase/migrations/20260211300000_verification_attempts.sql` — rate limiting table (new)
+  - `supabase/functions/create-verification-session/index.ts` — session creation Edge Function (new)
+  - `supabase/functions/verification-webhook/index.ts` — webhook handler Edge Function (new)
+  - `lib/api/verification.ts` — typed verification API functions (new)
+  - `types/api.ts` — added verification types
+  - `tsconfig.json` — excluded `supabase/functions` from Expo TypeScript compilation
+- **Learnings:**
+  - Supabase Edge Functions use Deno runtime with ESM imports from `https://esm.sh/` — these are incompatible with Node/Expo's TypeScript compiler, so `supabase/functions` must be excluded in `tsconfig.json`
+  - Veriff webhook uses HMAC-SHA256 for signature verification (`x-hmac-signature` header) — use Web Crypto API (`crypto.subtle`) in Deno rather than Node.js `createHmac`
+  - Edge Functions use two Supabase clients: one with the user's JWT (for auth identity) and one with service_role key (for privileged writes that bypass RLS)
+  - Rate limiting in Edge Functions is done by querying the `verification_attempts` table with a time window filter (`gte created_at`) and `count: 'exact'` + `head: true` for efficient counting
+  - `supabase.functions.invoke()` automatically passes the user's auth token from the client — no manual header setup needed in the mobile app
+  - Veriff `vendorData` field is used to pass the user ID through the verification flow so the webhook can associate the result back to the correct user
+  - Note: `@veriff/react-native-sdk` was NOT installed because Veriff's web-based session URL flow works via in-app browser/WebView without requiring a native SDK. The native SDK can be added later for a more polished UX if needed.
 ---
 

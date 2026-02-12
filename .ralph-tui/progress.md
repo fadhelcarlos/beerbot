@@ -628,3 +628,34 @@ after each iteration and it's included in prompts for context.
   - Supabase `decimal` columns come back as numbers in JS, but TypeScript doesn't know this — casting with `Number()` is safe for lat/lng used in Haversine calculations
 ---
 
+## 2026-02-11 - US-018
+- What was implemented:
+  - Created `app/(main)/order/configure.tsx` — Beer Detail and Order Configuration screen:
+    - Beer image area (branded placeholder with beer mug icon and style label, or image if `image_url` exists)
+    - Beer detail header: name, style, ABV, description
+    - Tap number badge: "Tap #3" style with brand amber styling
+    - Live availability badge (Available/Low/Out) and temperature display with realtime updates
+    - Fixed serving size display: "12 oz"
+    - Quantity stepper with - / + buttons, range 1-6, default 1, animated spring bounce on quantity change
+    - Live price breakdown: unit price, quantity multiplier, divider, total with brand amber highlight
+    - "Continue" CTA button fixed at bottom showing total price (e.g. "Continue · $15.00"), disabled if beer is out or cooling
+    - Inventory watchdog: if `availability_status` changes to `out` during viewing, shows Alert and navigates back to beer list
+    - Supabase realtime subscription on taps table for live temperature and availability updates (same merge pattern as beer list)
+    - BeerBot dark theme, FadeIn/FadeInDown staggered entrance animations, safe area insets
+  - Updated `app/(main)/venues/[id].tsx`:
+    - Beer card tap now navigates to `/(main)/order/configure` with `tapId` and `venueId` params
+    - Fixed `react-hooks/exhaustive-deps` lint warning by adding `id` to `renderBeerCard` dependency array
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes (0 errors, 0 warnings)
+- Files changed:
+  - `app/(main)/order/configure.tsx` — beer detail + order configuration screen (new)
+  - `app/(main)/venues/[id].tsx` — updated navigation to configure screen + lint fix
+- **Learnings:**
+  - Reanimated `withSpring` for quantity stepper animation: set `scale.value = 1.15` immediately then `withSpring(1, ...)` for a satisfying bounce effect
+  - The configure screen reuses the same `['venue-taps', venueId]` TanStack Query key as the beer list, so navigating forward gets instant data from cache with no refetch — just `useMemo` to find the specific tap from the cached array
+  - For realtime subscriptions on detail screens, subscribe to the same venue channel (not individual tap) since Supabase `postgres_changes` filter is on `venue_id` — filter the specific tap in the `setQueryData` callback
+  - `Alert.alert()` with a callback on "OK" is the right pattern for inventory drop alerts — it blocks interaction until dismissed, then navigates back
+  - Using a `hasNavigatedAway` ref prevents double-navigation from the inventory watchdog effect firing multiple times as the tap data updates
+  - When adding route params to navigation calls in `useCallback`, remember to add them to the dependency array or ESLint `exhaustive-deps` will warn
+---
+

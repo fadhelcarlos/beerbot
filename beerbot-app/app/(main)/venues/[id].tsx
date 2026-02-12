@@ -339,15 +339,14 @@ export default function VenueDetailScreen() {
         tap={item}
         index={index}
         onPress={() => {
-          // Navigate to beer detail/order screen (placeholder for future US)
           router.push({
-            pathname: '/(main)/venues/[id]',
-            params: { id: item.id },
+            pathname: '/(main)/order/configure',
+            params: { tapId: item.id, venueId: id },
           });
         }}
       />
     ),
-    [router],
+    [router, id],
   );
 
   const keyExtractor = useCallback((item: TapWithBeer) => item.id, []);

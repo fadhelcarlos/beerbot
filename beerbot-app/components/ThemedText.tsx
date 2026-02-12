@@ -1,5 +1,6 @@
-import { Text, type TextProps } from 'react-native';
+import { Text, type TextProps, type StyleProp, type TextStyle } from 'react-native';
+import { colors } from '@/lib/theme';
 
-export function ThemedText({ className, ...props }: TextProps & { className?: string }) {
-  return <Text className={`text-white ${className ?? ''}`} {...props} />;
+export function ThemedText({ style, ...props }: TextProps) {
+  return <Text style={[{ color: colors.text.primary }, style as StyleProp<TextStyle>]} {...props} />;
 }

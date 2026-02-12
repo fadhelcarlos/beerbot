@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import {
   View,
   Text,
-  Pressable,
+  TouchableOpacity,
   ScrollView,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -23,13 +23,10 @@ import {
   LogOut,
   Trash2,
   ChevronRight,
-  CheckCircle2,
-  AlertTriangle,
 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { checkVerificationStatus } from '@/lib/api/verification';
-import GlassCard from '@/components/ui/GlassCard';
 import GlassInput from '@/components/ui/GlassInput';
 import GoldButton from '@/components/ui/GoldButton';
 import PremiumBadge from '@/components/ui/PremiumBadge';
@@ -39,7 +36,6 @@ import {
   typography,
   radius,
   spacing,
-  shadows,
   goldGradient,
 } from '@/lib/theme';
 
@@ -55,91 +51,22 @@ interface UserProfile {
   age_verified_at: string | null;
 }
 
-// ─────────────────────────────────────────────────
-// Menu Row
-// ─────────────────────────────────────────────────
+type LucideIcon = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
 
-function MenuRow({
-  icon: Icon,
-  label,
-  subtitle,
-  onPress,
-  iconColor,
-  labelColor,
-  rightElement,
-}: {
-  icon: React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
-  label: string;
-  subtitle?: string;
-  onPress?: () => void;
+interface MenuItem {
+  icon: LucideIcon;
   iconColor?: string;
+  label: string;
   labelColor?: string;
+  description?: string;
+  onPress?: () => void;
   rightElement?: React.ReactNode;
-}) {
-  const ic = iconColor ?? colors.gold[400];
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={!onPress}
-      style={({ pressed }) => ({
-        flexDirection: 'row' as const,
-        alignItems: 'center' as const,
-        paddingHorizontal: spacing.cardPadding,
-        paddingVertical: 14,
-        width: '100%' as const,
-        gap: 12,
-        opacity: pressed && onPress ? 0.7 : 1,
-      })}
-    >
-      <View
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: 18,
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-          backgroundColor: `${ic}15`,
-        }}
-      >
-        <Icon size={18} color={ic} strokeWidth={2} />
-      </View>
-      <View style={{ flex: 1, flexShrink: 1 }}>
-        <Text
-          style={{
-            fontSize: 16,
-            lineHeight: 24,
-            color: labelColor ?? colors.text.primary,
-            textDecorationLine: 'none',
-            fontWeight: '500',
-          }}
-        >
-          {label}
-        </Text>
-        {subtitle ? (
-          <Text
-            style={{
-              fontSize: 12,
-              lineHeight: 18,
-              color: colors.text.tertiary,
-              marginTop: 2,
-              fontWeight: '500',
-            }}
-          >
-            {subtitle}
-          </Text>
-        ) : null}
-      </View>
-      {rightElement}
-      {onPress && !rightElement ? (
-        <ChevronRight size={18} color={colors.text.tertiary} strokeWidth={2} />
-      ) : null}
-    </Pressable>
-  );
+  loading?: boolean;
 }
 
-function SectionDivider() {
-  return <View style={styles.sectionDivider} />;
+interface MenuSection {
+  title?: string;
+  items: MenuItem[];
 }
 
 // ─────────────────────────────────────────────────
@@ -179,15 +106,13 @@ function EditProfileForm({
   };
 
   return (
-    <GlassCard style={styles.editFormCard}>
+    <View style={styles.editFormCard}>
       <Text style={styles.editFormTitle}>Edit Profile</Text>
-
       {error ? (
         <View style={styles.editFormError}>
           <Text style={styles.editFormErrorText}>{error}</Text>
         </View>
       ) : null}
-
       <GlassInput
         label="Full Name"
         value={name}
@@ -196,7 +121,6 @@ function EditProfileForm({
         autoCapitalize="words"
         autoCorrect={false}
       />
-
       <View style={{ marginTop: 16 }}>
         <Text style={styles.editEmailLabel}>Email</Text>
         <View style={styles.editEmailBox}>
@@ -206,24 +130,11 @@ function EditProfileForm({
           Email changes require confirmation via link
         </Text>
       </View>
-
       <View style={styles.editFormActions}>
-        <GoldButton
-          label="Cancel"
-          onPress={onCancel}
-          variant="ghost"
-          disabled={saving}
-          style={{ flex: 1 }}
-        />
-        <GoldButton
-          label="Save"
-          onPress={handleSave}
-          loading={saving}
-          disabled={saving}
-          style={{ flex: 1 }}
-        />
+        <GoldButton label="Cancel" onPress={onCancel} variant="ghost" disabled={saving} style={{ flex: 1 }} />
+        <GoldButton label="Save" onPress={handleSave} loading={saving} disabled={saving} style={{ flex: 1 }} />
       </View>
-    </GlassCard>
+    </View>
   );
 }
 
@@ -242,7 +153,7 @@ export default function ProfileScreen() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmAction, setConfirmAction] = useState<'signOut' | 'deleteAccount' | 'confirmDelete' | null>(null);
 
-  // Fetch user profile from users table
+  // Fetch user profile
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['user-profile', user?.id],
     queryFn: async (): Promise<UserProfile> => {
@@ -251,7 +162,6 @@ export default function ProfileScreen() {
         .select('id, email, full_name, age_verified, age_verified_at')
         .eq('id', user!.id)
         .single();
-
       if (error) throw error;
       return data as UserProfile;
     },
@@ -259,7 +169,6 @@ export default function ProfileScreen() {
     staleTime: 1000 * 60,
   });
 
-  // Fetch verification status
   const { data: verificationStatus } = useQuery({
     queryKey: ['verification-status'],
     queryFn: checkVerificationStatus,
@@ -267,30 +176,18 @@ export default function ProfileScreen() {
     staleTime: 1000 * 60,
   });
 
-  // ─── Save profile changes ───
-  const handleSaveProfile = useCallback(
-    async (newName: string) => {
-      const { error: dbError } = await supabase
-        .from('users')
-        .update({ full_name: newName })
-        .eq('id', user!.id);
+  const handleSaveProfile = useCallback(async (newName: string) => {
+    const { error: dbError } = await supabase
+      .from('users')
+      .update({ full_name: newName })
+      .eq('id', user!.id);
+    if (dbError) throw dbError;
+    await supabase.auth.updateUser({ data: { full_name: newName } });
+    await queryClient.invalidateQueries({ queryKey: ['user-profile'] });
+    setIsEditing(false);
+  }, [user, queryClient]);
 
-      if (dbError) throw dbError;
-
-      await supabase.auth.updateUser({
-        data: { full_name: newName },
-      });
-
-      await queryClient.invalidateQueries({ queryKey: ['user-profile'] });
-      setIsEditing(false);
-    },
-    [user, queryClient],
-  );
-
-  // ─── Sign Out ───
-  const handleSignOut = useCallback(() => {
-    setConfirmAction('signOut');
-  }, []);
+  const handleSignOut = useCallback(() => setConfirmAction('signOut'), []);
 
   const doSignOut = useCallback(async () => {
     setConfirmAction(null);
@@ -298,51 +195,96 @@ export default function ProfileScreen() {
     try {
       await supabase.auth.signOut();
       queryClient.clear();
-    } catch {
-      // silently fail — user can retry
-    } finally {
+    } catch {} finally {
       setIsSigningOut(false);
     }
   }, [queryClient]);
 
-  // ─── Delete Account ───
-  const handleDeleteAccount = useCallback(() => {
-    setConfirmAction('deleteAccount');
-  }, []);
+  const handleDeleteAccount = useCallback(() => setConfirmAction('deleteAccount'), []);
 
   const doDeleteAccount = useCallback(async () => {
     setConfirmAction(null);
     setIsDeleting(true);
     try {
-      const { error } = await supabase.functions.invoke(
-        'delete-account',
-        { method: 'POST' },
-      );
+      const { error } = await supabase.functions.invoke('delete-account', { method: 'POST' });
       if (error) throw error;
-
       await supabase.auth.signOut();
       queryClient.clear();
-    } catch {
-      // silently fail — user can retry
-    } finally {
+    } catch {} finally {
       setIsDeleting(false);
     }
   }, [queryClient]);
 
-  const displayName =
-    profile?.full_name ?? user?.user_metadata?.full_name ?? 'User';
+  const displayName = profile?.full_name ?? user?.user_metadata?.full_name ?? 'User';
   const displayEmail = profile?.email ?? user?.email ?? '';
   const isVerified = profile?.age_verified ?? verificationStatus?.age_verified ?? false;
+  const appVersion = Constants.expoConfig?.version ?? Constants.manifest2?.extra?.expoClient?.version ?? '1.0.0';
+  const initials = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
 
-  const appVersion =
-    Constants.expoConfig?.version ?? Constants.manifest2?.extra?.expoClient?.version ?? '1.0.0';
+  // ─── Data-driven sections (Checkbox pattern) ───
 
-  const initials = displayName
-    .split(' ')
-    .map((n: string) => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
+  const sections: MenuSection[] = [
+    {
+      title: 'ACCOUNT',
+      items: [
+        {
+          icon: UserPen,
+          label: 'Edit Profile',
+          description: 'Change your name',
+          onPress: () => setIsEditing(!isEditing),
+        },
+        {
+          icon: Shield,
+          label: 'Age Verification',
+          description: isVerified
+            ? `Verified${profile?.age_verified_at ? ` on ${new Date(profile.age_verified_at).toLocaleDateString()}` : ''}`
+            : 'Not yet verified',
+          onPress: !isVerified
+            ? () => router.push({ pathname: '/(main)/order/verify-age', params: { tapId: '', venueId: '', quantity: '1', totalPrice: '0' } })
+            : undefined,
+          rightElement: isVerified
+            ? <PremiumBadge label="Active" variant="success" small />
+            : <PremiumBadge label="Verify" variant="warning" small />,
+        },
+      ],
+    },
+    {
+      title: 'ACTIVITY',
+      items: [
+        {
+          icon: CreditCard,
+          label: 'Payment Methods',
+          description: 'Manage your cards',
+          onPress: () => router.push('/(main)/profile/payment-methods'),
+        },
+        {
+          icon: ClipboardList,
+          label: 'Order History',
+          description: 'View past orders',
+          onPress: () => router.push('/(main)/orders'),
+        },
+      ],
+    },
+    {
+      items: [
+        {
+          icon: LogOut,
+          iconColor: colors.text.secondary,
+          label: isSigningOut ? 'Signing out...' : 'Sign Out',
+          onPress: isSigningOut ? undefined : handleSignOut,
+          loading: isSigningOut,
+        },
+        {
+          icon: Trash2,
+          iconColor: colors.status.danger,
+          label: isDeleting ? 'Deleting...' : 'Delete Account',
+          labelColor: colors.status.danger,
+          onPress: isDeleting ? undefined : handleDeleteAccount,
+          loading: isDeleting,
+        },
+      ],
+    },
+  ];
 
   return (
     <KeyboardAvoidingView
@@ -366,15 +308,11 @@ export default function ProfileScreen() {
           </View>
         ) : (
           <>
-            {/* User Info Card */}
-            <Animated.View
-              entering={FadeInDown.delay(50).duration(350)}
-              style={styles.sectionWrapper}
-            >
-              <GlassCard goldAccent>
+            {/* Avatar Card */}
+            <Animated.View entering={FadeInDown.delay(50).duration(350)} style={styles.sectionWrapper}>
+              <View style={styles.card}>
                 <View style={styles.profileCardContent}>
-                  {/* Avatar with gold gradient ring */}
-                  <View style={[styles.avatarRing, shadows.glow]}>
+                  <View style={styles.avatarRing}>
                     <LinearGradient
                       colors={goldGradient.colors as unknown as [string, string, ...string[]]}
                       start={goldGradient.start}
@@ -386,23 +324,19 @@ export default function ProfileScreen() {
                       </View>
                     </LinearGradient>
                   </View>
-
                   <Text style={styles.profileName}>{displayName}</Text>
                   <Text style={styles.profileEmail}>{displayEmail}</Text>
-
-                  {/* Verification badge */}
                   <View style={{ marginTop: 16 }}>
-                    {isVerified ? (
-                      <PremiumBadge label="Verified" variant="success" glow />
-                    ) : (
-                      <PremiumBadge label="Unverified" variant="warning" />
-                    )}
+                    {isVerified
+                      ? <PremiumBadge label="Verified" variant="success" glow />
+                      : <PremiumBadge label="Unverified" variant="warning" />
+                    }
                   </View>
                 </View>
-              </GlassCard>
+              </View>
             </Animated.View>
 
-            {/* Edit Profile Form (inline toggle) */}
+            {/* Edit Profile (inline) */}
             {isEditing ? (
               <Animated.View entering={FadeInDown.duration(300)} style={styles.sectionWrapperSmall}>
                 <EditProfileForm
@@ -414,123 +348,61 @@ export default function ProfileScreen() {
               </Animated.View>
             ) : null}
 
-            {/* Account Section */}
-            <Animated.View
-              entering={FadeInDown.delay(100).duration(350)}
-              style={styles.sectionWrapper}
-            >
-              <Text style={styles.sectionLabel}>ACCOUNT</Text>
-              <GlassCard noPadding>
-                <MenuRow
-                  icon={UserPen}
-                  label="Edit Profile"
-                  subtitle="Change your name"
-                  onPress={() => setIsEditing(!isEditing)}
-                />
-                <SectionDivider />
-                <MenuRow
-                  icon={Shield}
-                  label="Age Verification"
-                  subtitle={
-                    isVerified
-                      ? `Verified${profile?.age_verified_at ? ` on ${new Date(profile.age_verified_at).toLocaleDateString()}` : ''}`
-                      : 'Not yet verified'
-                  }
-                  onPress={
-                    !isVerified
-                      ? () =>
-                          router.push({
-                            pathname: '/(main)/order/verify-age',
-                            params: {
-                              tapId: '',
-                              venueId: '',
-                              quantity: '1',
-                              totalPrice: '0',
-                            },
-                          })
-                      : undefined
-                  }
-                  rightElement={
-                    isVerified ? (
-                      <PremiumBadge label="Active" variant="success" small />
-                    ) : (
-                      <PremiumBadge label="Verify" variant="warning" small />
-                    )
-                  }
-                />
-              </GlassCard>
-            </Animated.View>
-
-            {/* Activity Section */}
-            <Animated.View
-              entering={FadeInDown.delay(150).duration(350)}
-              style={styles.sectionWrapper}
-            >
-              <Text style={styles.sectionLabel}>ACTIVITY</Text>
-              <GlassCard noPadding>
-                <MenuRow
-                  icon={CreditCard}
-                  label="Payment Methods"
-                  subtitle="Manage your cards"
-                  onPress={() => router.push('/(main)/profile/payment-methods')}
-                />
-                <SectionDivider />
-                <MenuRow
-                  icon={ClipboardList}
-                  label="Order History"
-                  subtitle="View past orders"
-                  onPress={() => router.push('/(main)/orders')}
-                />
-              </GlassCard>
-            </Animated.View>
-
-            {/* Danger Zone */}
-            <Animated.View
-              entering={FadeInDown.delay(200).duration(350)}
-              style={styles.sectionWrapper}
-            >
-              <GlassCard noPadding>
-                <MenuRow
-                  icon={LogOut}
-                  label={isSigningOut ? 'Signing out...' : 'Sign Out'}
-                  iconColor={colors.text.secondary}
-                  onPress={isSigningOut ? undefined : handleSignOut}
-                  rightElement={
-                    isSigningOut ? (
-                      <ActivityIndicator color={colors.gold[500]} size="small" />
-                    ) : undefined
-                  }
-                />
-                <SectionDivider />
-                <MenuRow
-                  icon={Trash2}
-                  label={isDeleting ? 'Deleting...' : 'Delete Account'}
-                  iconColor={colors.status.danger}
-                  labelColor={colors.status.danger}
-                  onPress={isDeleting ? undefined : handleDeleteAccount}
-                  rightElement={
-                    isDeleting ? (
-                      <ActivityIndicator color={colors.status.danger} size="small" />
-                    ) : undefined
-                  }
-                />
-              </GlassCard>
-            </Animated.View>
+            {/* Menu Sections */}
+            {sections.map((section, si) => (
+              <Animated.View
+                key={si}
+                entering={FadeInDown.delay((si + 1) * 60).duration(350)}
+                style={styles.sectionWrapper}
+              >
+                {section.title ? (
+                  <Text style={styles.sectionLabel}>{section.title}</Text>
+                ) : null}
+                <View style={styles.card}>
+                  {section.items.map((item, i, arr) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={[
+                        styles.menuItem,
+                        i < arr.length - 1 && styles.menuItemBorder,
+                      ]}
+                      onPress={item.onPress || undefined}
+                      disabled={!item.onPress}
+                      activeOpacity={0.6}
+                    >
+                      <View style={[styles.iconCircle, { backgroundColor: (item.iconColor || colors.gold[400]) + '18' }]}>
+                        <item.icon size={18} color={item.iconColor || colors.gold[400]} strokeWidth={2} />
+                      </View>
+                      <View style={styles.menuText}>
+                        <Text style={[styles.menuLabel, item.labelColor ? { color: item.labelColor } : null]}>
+                          {item.label}
+                        </Text>
+                        {item.description ? (
+                          <Text style={styles.menuDesc} numberOfLines={1}>{item.description}</Text>
+                        ) : null}
+                      </View>
+                      {item.loading ? (
+                        <ActivityIndicator color={item.iconColor || colors.gold[500]} size="small" />
+                      ) : item.rightElement ? (
+                        item.rightElement
+                      ) : item.onPress ? (
+                        <ChevronRight size={18} color={colors.text.tertiary} strokeWidth={2} />
+                      ) : null}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </Animated.View>
+            ))}
 
             {/* App Version */}
-            <Animated.View
-              entering={FadeInDown.delay(250).duration(350)}
-              style={styles.versionWrapper}
-            >
-              <Text style={styles.versionText}>
-                BeerBot v{appVersion}
-              </Text>
+            <Animated.View entering={FadeInDown.delay(250).duration(350)} style={styles.versionWrapper}>
+              <Text style={styles.versionText}>BeerBot v{appVersion}</Text>
             </Animated.View>
           </>
         )}
       </ScrollView>
 
-      {/* Sign Out Confirmation */}
+      {/* Modals */}
       <ConfirmModal
         visible={confirmAction === 'signOut'}
         title="Sign Out"
@@ -540,8 +412,6 @@ export default function ProfileScreen() {
         onConfirm={doSignOut}
         onCancel={() => setConfirmAction(null)}
       />
-
-      {/* Delete Account — Step 1 */}
       <ConfirmModal
         visible={confirmAction === 'deleteAccount'}
         title="Delete Account"
@@ -551,8 +421,6 @@ export default function ProfileScreen() {
         onConfirm={() => setConfirmAction('confirmDelete')}
         onCancel={() => setConfirmAction(null)}
       />
-
-      {/* Delete Account — Step 2 (final confirmation) */}
       <ConfirmModal
         visible={confirmAction === 'confirmDelete'}
         title="Are you sure?"
@@ -566,6 +434,10 @@ export default function ProfileScreen() {
   );
 }
 
+// ─────────────────────────────────────────────────
+// Styles — ALL inline, NO typography spread, NO NativeWind
+// ─────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -577,7 +449,8 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   headerTitle: {
-    ...typography.title,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 28,
     color: colors.text.primary,
   },
   loadingWrapper: {
@@ -595,16 +468,29 @@ const styles = StyleSheet.create({
     marginTop: spacing.itemGap,
   },
   sectionLabel: {
-    ...typography.overline,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+    letterSpacing: 0.88,
+    lineHeight: 16,
     color: colors.text.tertiary,
     marginBottom: 10,
     paddingLeft: 4,
+    textTransform: 'uppercase',
   },
+  card: {
+    backgroundColor: colors.glass.surface,
+    borderRadius: radius['2xl'],
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    overflow: 'hidden',
+  },
+
+  // Profile avatar card
   profileCardContent: {
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
   },
-  // Avatar
   avatarRing: {
     width: 100,
     height: 100,
@@ -625,70 +511,71 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: {
-    ...typography.display,
-    color: colors.gold[400],
+    fontFamily: 'Inter_700Bold',
     fontSize: 34,
+    color: colors.gold[400],
   },
   profileName: {
-    ...typography.title,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 22,
     color: colors.text.primary,
     textAlign: 'center',
   },
   profileEmail: {
-    ...typography.label,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 14,
     color: colors.text.secondary,
     textAlign: 'center',
     marginTop: 6,
   },
-  // Menu row
-  menuRow: {
+
+  // Menu rows
+  menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.cardPadding,
     paddingVertical: 14,
-    width: '100%',
+    paddingHorizontal: 20,
     gap: 12,
   },
-  menuIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
+  menuItemBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.glass.border,
   },
-  menuTextCol: {
+  iconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  menuText: {
     flex: 1,
-    marginLeft: 0,
-    flexShrink: 1,
   },
   menuLabel: {
     fontFamily: 'Inter_500Medium',
     fontSize: 16,
-    letterSpacing: 0.16,
     lineHeight: 24,
     color: colors.text.primary,
-    textDecorationLine: 'none',
+    marginBottom: 2,
   },
-  menuSubtitle: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-    letterSpacing: 0.39,
+  menuDesc: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
     lineHeight: 18,
     color: colors.text.tertiary,
-    marginTop: 2,
   },
-  sectionDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.glass.border,
-    marginHorizontal: spacing.cardPadding,
-  },
+
   // Edit form
   editFormCard: {
-    marginHorizontal: 0,
+    backgroundColor: colors.glass.surface,
+    borderRadius: radius['2xl'],
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    padding: 20,
   },
   editFormTitle: {
-    ...typography.heading,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 18,
     color: colors.text.primary,
     marginBottom: 16,
   },
@@ -699,11 +586,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   editFormErrorText: {
-    ...typography.caption,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
     color: colors.status.danger,
   },
   editEmailLabel: {
-    ...typography.label,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 14,
     color: colors.text.secondary,
     marginBottom: 8,
   },
@@ -716,30 +605,32 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   editEmailText: {
-    ...typography.body,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 16,
     color: colors.text.tertiary,
   },
   editEmailHint: {
-    ...typography.caption,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
     color: colors.text.tertiary,
     marginTop: 6,
     marginLeft: 4,
-    fontSize: 12,
   },
   editFormActions: {
     flexDirection: 'row',
     gap: 12,
     marginTop: 20,
   },
+
   // Version
   versionWrapper: {
     marginTop: 32,
     marginBottom: 16,
   },
   versionText: {
-    ...typography.caption,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
     color: colors.text.tertiary,
     textAlign: 'center',
-    fontSize: 12,
   },
 });

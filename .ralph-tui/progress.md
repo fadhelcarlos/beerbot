@@ -852,3 +852,40 @@ after each iteration and it's included in prompts for context.
   - `@react-navigation/bottom-tabs` is already included as a transitive dependency of `expo-router` — no additional install needed
 ---
 
+## 2026-02-11 - US-024
+- What was implemented:
+  - Rewrote `app/(main)/orders/[id].tsx` from basic placeholder to full Order Detail view:
+    - Header: beer name, style, ABV, and color-coded status badge
+    - Order details card: venue name, tap number, quantity, pour size, unit price, total (brand-highlighted)
+    - Payment info card: payment method display (Apple Pay / Google Pay / card last 4 from order_events metadata), paid date, and Stripe receipt link (opens in browser via Linking.openURL)
+    - Order timeline: chronological list of all order_events with emoji icons, human-readable event names, and formatted timestamps, with vertical connector lines between events
+    - Timestamps card: created, paid, redeemed, completed, expires dates, and truncated order ID
+    - Reorder button: conditionally shown when order is not active and the same beer is still available at the same venue (checks tap status, beer_id match, temp_ok, and inventory via `checkTapAvailability` API). Navigates to configure screen with tapId and venueId params
+    - Active order CTA: for orders with status `paid` or `ready_to_redeem`, shows prominent "Show QR Code" button that navigates to the redeem screen
+    - Loading, error, and not-found states
+    - BeerBot dark theme with brand amber accents, FadeIn/FadeInDown staggered entrance animations
+  - Added `getOrderWithDetails(orderId)` to `lib/api/orders.ts`:
+    - Supabase nested select `'*, beers (name, style, abv), venues (name), taps (tap_number)'` for 4-table join
+    - Destructures nested join objects and maps to flat `OrderDetailWithRelations` type
+  - Added `getOrderEvents(orderId)` to `lib/api/orders.ts`:
+    - Fetches all order_events for an order, sorted chronologically ascending
+  - Added `checkTapAvailability(tapId, beerId)` to `lib/api/orders.ts`:
+    - Checks tap is active, same beer, temp_ok, and has inventory above threshold
+    - Returns boolean for conditional reorder button display
+  - Added `OrderDetailWithRelations` interface to `types/api.ts`:
+    - Extends Order with beer_name, beer_style, beer_abv, venue_name, tap_number
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes (0 errors, 0 warnings)
+- Files changed:
+  - `app/(main)/orders/[id].tsx` — full order detail screen (rewritten)
+  - `lib/api/orders.ts` — added `getOrderWithDetails`, `getOrderEvents`, `checkTapAvailability`
+  - `types/api.ts` — added `OrderDetailWithRelations` interface
+- **Learnings:**
+  - When destructuring Supabase join fields from a row to create a flat type, use `const { beers, venues, taps, ...orderFields } = row` instead of spreading and setting to `undefined as never` — the latter causes TS2353 "may only specify known properties" errors
+  - ESLint `react-hooks/exhaustive-deps` warns when `const x = queryResult.data ?? []` is used as a dependency in `useMemo` — the `??` creates a new array reference on every render. Fix by wrapping the fallback itself in `useMemo`: `const x = useMemo(() => data ?? [], [data])`
+  - Supabase nested select supports 4+ table joins in a single query: `'*, beers (name, style, abv), venues (name), taps (tap_number)'` — each FK relationship is automatically resolved
+  - Payment method details (last4, wallet_type, card_brand) and receipt_url are stored in `order_events` metadata JSON by the Stripe webhook handler — read from `stripe_payment_intent.succeeded` event metadata
+  - `Linking.openURL()` from react-native opens URLs in the default browser — suitable for Stripe receipt links
+  - The reorder button checks tap availability via a separate TanStack Query that's only enabled when the order is not active — prevents unnecessary API calls for in-progress orders
+---
+

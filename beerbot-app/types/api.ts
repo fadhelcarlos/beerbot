@@ -148,6 +148,14 @@ export interface OrderWithDetails extends Order {
   venue_name: string;
 }
 
+export interface OrderDetailWithRelations extends Order {
+  beer_name: string;
+  beer_style: string;
+  beer_abv: number;
+  venue_name: string;
+  tap_number: number;
+}
+
 export interface OrderEvent {
   id: string;
   order_id: string;

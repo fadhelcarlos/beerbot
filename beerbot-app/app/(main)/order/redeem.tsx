@@ -27,6 +27,10 @@ import { getOrder } from '@/lib/api/orders';
 import { generateQrToken, generateQrDataString } from '@/lib/utils/qr';
 import { fetchVenue } from '@/lib/api/venues';
 import { supabase } from '@/lib/supabase';
+import {
+  scheduleRedemptionWarnings,
+  cancelScheduledNotification,
+} from '@/lib/notifications';
 import type { Order, OrderStatus } from '@/types/api';
 
 // ─────────────────────────────────────────────────
@@ -179,6 +183,8 @@ export default function RedeemScreen() {
   const originalBrightness = useRef<number | null>(null);
   const previousStatusRef = useRef<OrderStatus | null>(null);
   const lottieRef = useRef<LottieView>(null);
+  const notifFiveMinRef = useRef<string | null>(null);
+  const notifOneMinRef = useRef<string | null>(null);
 
   const remaining = useCountdown(order?.expires_at ?? null);
 
@@ -204,6 +210,18 @@ export default function RedeemScreen() {
     }
   }, []);
 
+  // Cancel any pending redemption warning notifications
+  const cancelRedemptionNotifications = useCallback(async () => {
+    if (notifFiveMinRef.current) {
+      await cancelScheduledNotification(notifFiveMinRef.current);
+      notifFiveMinRef.current = null;
+    }
+    if (notifOneMinRef.current) {
+      await cancelScheduledNotification(notifOneMinRef.current);
+      notifOneMinRef.current = null;
+    }
+  }, []);
+
   // Handle order status transitions
   const handleStatusChange = useCallback(
     (newStatus: OrderStatus) => {
@@ -219,6 +237,16 @@ export default function RedeemScreen() {
         withSpring(1, { damping: 12 }),
       );
 
+      // Cancel notifications when order is redeemed or transitions past ready state
+      if (
+        newStatus === 'redeemed' ||
+        newStatus === 'pouring' ||
+        newStatus === 'completed' ||
+        newStatus === 'expired'
+      ) {
+        cancelRedemptionNotifications();
+      }
+
       // Transition screen state
       if (newStatus === 'pouring') {
         setScreenState('pouring');
@@ -228,7 +256,7 @@ export default function RedeemScreen() {
         setScreenState('expired');
       }
     },
-    [triggerHaptic, stepperPulse],
+    [triggerHaptic, stepperPulse, cancelRedemptionNotifications],
   );
 
   // Auto-maximize screen brightness on mount, restore on unmount
@@ -323,6 +351,18 @@ export default function RedeemScreen() {
           orderData.status !== 'expired'
         ) {
           setScreenState('ready');
+
+          // Schedule redemption warning notifications if order has an expiry
+          if (orderData.expires_at) {
+            scheduleRedemptionWarnings(orderData.expires_at, orderId!).then(
+              ({ fiveMinId, oneMinId }) => {
+                if (!cancelled) {
+                  notifFiveMinRef.current = fiveMinId;
+                  notifOneMinRef.current = oneMinId;
+                }
+              },
+            );
+          }
         }
       } catch (err) {
         if (cancelled) return;
@@ -371,8 +411,21 @@ export default function RedeemScreen() {
     if (remaining === 0 && screenState === 'ready') {
       setScreenState('expired');
       triggerHaptic('expired');
+      cancelRedemptionNotifications();
     }
-  }, [remaining, screenState, triggerHaptic]);
+  }, [remaining, screenState, triggerHaptic, cancelRedemptionNotifications]);
+
+  // Cancel scheduled notifications on unmount
+  useEffect(() => {
+    return () => {
+      if (notifFiveMinRef.current) {
+        cancelScheduledNotification(notifFiveMinRef.current);
+      }
+      if (notifOneMinRef.current) {
+        cancelScheduledNotification(notifOneMinRef.current);
+      }
+    };
+  }, []);
 
   const handleDone = useCallback(() => {
     if (venueId) {
@@ -452,7 +505,7 @@ export default function RedeemScreen() {
         <View className="flex-1 items-center justify-center px-8">
           <Animated.View entering={FadeIn.duration(400)} className="items-center">
             <Text className="text-5xl">{'\u23F0'}</Text>
-            <Text className="text-white text-xl font-bold mt-6 text-center">
+            <Text className="text-white text-2xl font-bold mt-6 text-center">
               Order Expired
             </Text>
             <Text className="text-white/50 text-base mt-3 text-center leading-6">
@@ -468,13 +521,13 @@ export default function RedeemScreen() {
             </View>
           </Animated.View>
         </View>
-        <View className="px-6">
+        <View className="px-6 gap-3">
           <Pressable
             onPress={handleBackToVenues}
             className="w-full items-center justify-center rounded-2xl py-4 bg-brand active:opacity-80"
           >
             <Text className="text-lg font-bold text-dark">
-              Back to Venues
+              Order Again
             </Text>
           </Pressable>
         </View>
@@ -589,7 +642,18 @@ export default function RedeemScreen() {
   // Render: Ready State (main QR screen with stepper)
   // ─────────────────────────────────────────────────
 
-  const isLow = remaining != null && remaining <= 120;
+  const isWarning = remaining != null && remaining <= 300 && remaining > 60;
+  const isCritical = remaining != null && remaining <= 60;
+
+  const countdownColor = isCritical
+    ? 'text-red-400'
+    : isWarning
+      ? 'text-yellow-400'
+      : 'text-white';
+
+  const countdownHintColor = isCritical
+    ? 'text-red-400/70'
+    : 'text-yellow-400/70';
 
   return (
     <View className="flex-1 bg-dark" style={{ paddingTop: insets.top }}>
@@ -679,16 +743,14 @@ export default function RedeemScreen() {
           className="mx-6 mt-4 items-center"
         >
           <Text className="text-sm text-white/50 mb-2">Time remaining</Text>
-          <Text
-            className={`text-4xl font-bold ${
-              isLow ? 'text-red-400' : 'text-white'
-            }`}
-          >
+          <Text className={`text-4xl font-bold ${countdownColor}`}>
             {formatCountdown(remaining)}
           </Text>
-          {isLow && remaining != null && remaining > 0 && (
-            <Text className="text-xs text-red-400/70 mt-1">
-              Hurry! Your code expires soon
+          {(isWarning || isCritical) && remaining != null && remaining > 0 && (
+            <Text className={`text-xs ${countdownHintColor} mt-1`}>
+              {isCritical
+                ? 'Last chance! Redeem now'
+                : 'Hurry! Your code expires soon'}
             </Text>
           )}
         </Animated.View>

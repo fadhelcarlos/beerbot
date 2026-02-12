@@ -7,12 +7,17 @@ import { StatusBar } from 'expo-status-bar';
 import { QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import * as Linking from 'expo-linking';
+import * as Notifications from 'expo-notifications';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { getStripePublishableKey } from '@/lib/api/payments';
 import { queryClient } from '@/lib/query-client';
 import { supabase } from '@/lib/supabase';
 import { isSessionExpiredError } from '@/lib/utils/error-handler';
+import {
+  registerForPushNotifications,
+  savePushToken,
+} from '@/lib/notifications';
 import OfflineBanner from '@/components/OfflineBanner';
 
 // Sync TanStack Query online status with NetInfo
@@ -102,6 +107,47 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
     return () => subscription.remove();
   }, [handleDeepLink]);
+
+  // Register for push notifications when authenticated
+  useEffect(() => {
+    if (!isAuthenticated || isLoading) return;
+
+    registerForPushNotifications().then((token) => {
+      if (token) {
+        savePushToken(token);
+      }
+    });
+  }, [isAuthenticated, isLoading]);
+
+  // Handle notification taps — navigate to the order's redeem screen
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        const data = response.notification.request.content.data;
+        if (data?.orderId && data?.screen === 'redeem') {
+          router.push(
+            `/(main)/order/redeem?orderId=${data.orderId}` as `/(main)/order/redeem`,
+          );
+        }
+      },
+    );
+
+    return () => subscription.remove();
+  }, [router]);
+
+  // Check if app was opened from a notification (cold start)
+  useEffect(() => {
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        const data = response.notification.request.content.data;
+        if (data?.orderId && data?.screen === 'redeem') {
+          router.push(
+            `/(main)/order/redeem?orderId=${data.orderId}` as `/(main)/order/redeem`,
+          );
+        }
+      }
+    });
+  }, [router]);
 
   // Redirect based on auth state
   useEffect(() => {

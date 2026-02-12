@@ -1042,3 +1042,43 @@ after each iteration and it's included in prompts for context.
   - For payment network drop detection, the pattern is: (1) detect offline → show "Checking payment status...", (2) detect reconnection → auto-start polling at 3s intervals, (3) timeout after 30s → show error with fallback to order history
 ---
 
+## 2026-02-11 - US-029
+- What was implemented:
+  - Created `lib/notifications.ts` — centralized push notification utility:
+    - `setNotificationHandler` configures foreground notification display (alert, sound, banner, list)
+    - `registerForPushNotifications()` — requests permission, creates Android notification channel (HIGH importance, brand color), gets Expo push token via `getExpoPushTokenAsync`
+    - `savePushToken(token)` — stores push token in user's `users` row via Supabase
+    - `scheduleLocalNotification(title, body, triggerDate, data)` — schedules a local notification at a specific date using `TIME_INTERVAL` trigger, returns identifier for cancellation
+    - `cancelScheduledNotification(identifier)` — cancels a specific notification
+    - `cancelAllScheduledNotifications()` — cancels all pending notifications
+    - `scheduleRedemptionWarnings(expiresAt, orderId)` — schedules 5-min and 1-min warning notifications before order expiry, returns both identifiers
+  - Created `supabase/migrations/20260211600000_push_token.sql`:
+    - Adds `push_token text` column to `users` table (existing UPDATE RLS policy already covers own-row updates)
+  - Updated `app/(main)/order/redeem.tsx`:
+    - Countdown timer color: yellow (`text-yellow-400`) at 5 minutes remaining, red (`text-red-400`) at 1 minute remaining (was only red at 2 minutes)
+    - Urgency hint text: "Hurry! Your code expires soon" at 5 min, "Last chance! Redeem now" at 1 min
+    - Schedules local notifications at 5-min and 1-min remaining when order loads with `ready_to_redeem` status
+    - Cancels notifications on redemption (redeemed/pouring/completed/expired status transitions)
+    - Cancels notifications on timer-based expiration (remaining === 0)
+    - Cancels notifications on component unmount (cleanup effect)
+    - Expired screen: "Order Expired" full-screen message with "You have not been charged" text, "Order Again" button navigating to venues
+  - Updated `app/_layout.tsx` AuthGate:
+    - Registers for push notifications and saves token when user authenticates
+    - Notification tap handler: listens to `addNotificationResponseReceivedListener`, navigates to redeem screen if notification data has `orderId` + `screen: 'redeem'`
+    - Cold start notification handler: checks `getLastNotificationResponseAsync` on mount for app opened from notification
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `lib/notifications.ts` — centralized push notification utility (new)
+  - `supabase/migrations/20260211600000_push_token.sql` — push_token column migration (new)
+  - `app/(main)/order/redeem.tsx` — countdown colors, notification scheduling/cancellation, expired screen
+  - `app/_layout.tsx` — push token registration, notification tap handling
+- **Learnings:**
+  - Expo SDK 54 `expo-notifications` `NotificationBehavior` type requires `shouldShowBanner` and `shouldShowList` in addition to `shouldShowAlert`/`shouldPlaySound`/`shouldSetBadge` — older docs may only show the latter three
+  - `Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL` with `seconds` is the correct trigger type for scheduling local notifications at a relative time — use `Math.max(1, ...)` to avoid scheduling with 0 or negative seconds
+  - For notification-driven navigation, both `addNotificationResponseReceivedListener` (warm start) and `getLastNotificationResponseAsync` (cold start) are needed for complete coverage
+  - Push token registration should happen after auth state is confirmed (`isAuthenticated && !isLoading`) to ensure the Supabase session is valid for the `users` table update
+  - Android requires a notification channel created via `setNotificationChannelAsync` with `AndroidImportance.HIGH` for heads-up notifications — this must be done before scheduling
+  - `expo-notifications` was already installed (US-001) and configured in `app.json` with icon and brand color — no additional package install needed
+---
+

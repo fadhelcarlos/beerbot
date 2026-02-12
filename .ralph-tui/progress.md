@@ -558,3 +558,42 @@ after each iteration and it's included in prompts for context.
   - The `redirectTo` in `resetPasswordForEmail()` must match the deep link scheme + path (`beerbot://reset-password`) — Supabase appends tokens as hash fragments to this URL
 ---
 
+## 2026-02-11 - US-016
+- What was implemented:
+  - Replaced placeholder `app/(main)/venues/index.tsx` with full venue selection screen:
+    - Requests location permission on mount via `expo-location` with graceful denial handling
+    - GPS granted: calls `fetchVenues()` with lat/lng → venues sorted by proximity via `get_venues_nearby` RPC
+    - GPS denied: shows full venue list alphabetically (no distance info)
+    - Nearest venue detection: venues within 200m (~0.124 mi) show "You're here!" badge with highlighted card (brand border + tinted background)
+    - Distance badges on venue cards (e.g. "0.1 mi away", "528 ft away")
+    - Search bar with real-time filtering by venue name or address, with clear button
+    - Venue cards show: name, address, distance (if GPS), active tap count (green dot indicator), placeholder image area
+    - `mobile_ordering_enabled=false` venues shown as "In-person only" (greyed out, not tappable, `opacity-50`)
+    - Pull-to-refresh re-checks location permission + refetches venues and tap counts
+    - Empty state: "No venues found" with contextual hint when search is active
+    - Error state with friendly message
+    - Loading state with ActivityIndicator while detecting location + fetching data
+    - Tapping a venue navigates to `app/(main)/venues/[id].tsx`
+    - TanStack Query for all data fetching: location, venues, tap counts — with caching and stale times
+    - FadeIn/FadeInDown entrance animations for header, search bar, and venue cards (staggered)
+    - BeerBot dark theme with brand amber accents
+  - Added `fetchVenueActiveTapCounts()` to `lib/api/venues.ts`:
+    - Fetches active taps for a list of venue IDs, returns `Record<string, number>` map
+    - Used by venue cards to show active tap count per venue
+  - Created placeholder `app/(main)/venues/[id].tsx` for navigation target (typed routes require target to exist)
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes (0 errors, 0 warnings)
+- Files changed:
+  - `app/(main)/venues/index.tsx` — full venue selection screen (rewritten from placeholder)
+  - `app/(main)/venues/[id].tsx` — placeholder venue detail screen (new)
+  - `lib/api/venues.ts` — added `fetchVenueActiveTapCounts` function
+- **Learnings:**
+  - Using TanStack Query for location permission requests works well — the `queryFn` handles the side effect of requesting permission, and `staleTime` prevents re-prompting on re-renders
+  - Location query should have `retry: false` since permission denial is not a transient error
+  - `FlatList` `contentContainerStyle` needs `flexGrow: 1` for `ListEmptyComponent` to center properly — but only when the list is empty, so use conditional spread
+  - React hooks exhaustive-deps lint rule catches `const x = query.data ?? {}` creating new object references on every render — wrap in `useMemo` to stabilize
+  - For venue cards with staggered entrance animations, `FadeInDown.delay(index * 60)` gives a nice cascading effect without being too slow
+  - Expo Router typed routes with `experiments.typedRoutes: true` require the destination screen file to exist for `router.push()` to pass `tsc` — placeholder screens are necessary
+  - 200 meters ≈ 0.124 miles — this is the "You're here!" threshold for nearby venue detection
+---
+

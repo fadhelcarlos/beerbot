@@ -48,6 +48,30 @@ export async function fetchVenues(params?: {
   }));
 }
 
+/**
+ * Fetch active tap counts for a list of venue IDs.
+ * Returns a map of venueId -> active tap count.
+ */
+export async function fetchVenueActiveTapCounts(
+  venueIds: string[],
+): Promise<Record<string, number>> {
+  if (venueIds.length === 0) return {};
+
+  const { data, error } = await supabase
+    .from('taps')
+    .select('venue_id')
+    .in('venue_id', venueIds)
+    .eq('status', 'active');
+
+  if (error) throw error;
+
+  const counts: Record<string, number> = {};
+  for (const row of data ?? []) {
+    counts[row.venue_id] = (counts[row.venue_id] ?? 0) + 1;
+  }
+  return counts;
+}
+
 // ============================================================
 // Taps
 // ============================================================

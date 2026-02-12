@@ -229,3 +229,30 @@ after each iteration and it's included in prompts for context.
   - Note: `@veriff/react-native-sdk` was NOT installed because Veriff's web-based session URL flow works via in-app browser/WebView without requiring a native SDK. The native SDK can be added later for a more polished UX if needed.
 ---
 
+## 2026-02-11 - US-013
+- What was implemented:
+  - Replaced placeholder `app/(auth)/register.tsx` with full registration screen:
+    - Form fields: Full Name (autoCapitalize words), Email (email keyboard), Password (secureTextEntry)
+    - Client-side validation on blur: name required, email format, password min 8 chars
+    - Animated password strength indicator bar (weak=red/33%, medium=amber/66%, strong=green/100%) using reanimated `withTiming`
+    - Show/Hide password toggle button inside password field
+    - Submit calls `supabase.auth.signUp()` with email, password, and `full_name` in `raw_user_meta_data`
+    - On success: `router.replace('/(main)/venues')` — auth store listener picks up session automatically
+    - On failure: error banner with mapped Supabase error messages (already registered, invalid email, etc.)
+    - Loading state: button disabled + ActivityIndicator spinner during signUp
+    - KeyboardAvoidingView (iOS padding, Android height) wrapping ScrollView with `keyboardShouldPersistTaps="handled"`
+    - Back navigation via `router.back()` to welcome screen
+    - FadeIn entrance animation on form content
+    - BeerBot dark theme (bg-dark, text-white, brand amber accents)
+    - Safe area insets via useSafeAreaInsets
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes (0 errors, 0 warnings)
+- Files changed:
+  - `app/(auth)/register.tsx` — full registration screen (rewritten from placeholder)
+- **Learnings:**
+  - `catch {}` (no binding) is valid in modern TypeScript/ESLint and avoids unused-var warnings — preferred over `catch (_e)`
+  - Supabase `signUp()` accepts `options.data` for `raw_user_meta_data` which the `handle_new_user()` trigger reads to populate `users.full_name`
+  - For password visibility toggle, using `absolute` positioning with `right-4 top-0 bottom-0 justify-center` in NativeWind creates a properly centered toggle inside TextInput without needing a wrapper component
+  - `keyboardShouldPersistTaps="handled"` on ScrollView prevents keyboard dismissal when tapping buttons — essential for form UX
+---
+

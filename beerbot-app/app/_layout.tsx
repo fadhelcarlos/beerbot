@@ -1,26 +1,69 @@
 import '../global.css';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
+import { View, Alert } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import * as Linking from 'expo-linking';
+import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { getStripePublishableKey } from '@/lib/api/payments';
+import { queryClient } from '@/lib/query-client';
+import { supabase } from '@/lib/supabase';
+import { isSessionExpiredError } from '@/lib/utils/error-handler';
+import OfflineBanner from '@/components/OfflineBanner';
 
-const queryClient = new QueryClient();
+// Sync TanStack Query online status with NetInfo
+onlineManager.setEventListener((setOnline) => {
+  return NetInfo.addEventListener((state) => {
+    setOnline(!!state.isConnected);
+  });
+});
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
   const { isAuthenticated, isLoading, initialize } = useAuthStore();
+  const hasShown401Alert = useRef(false);
 
   // Initialize auth listener on mount
   useEffect(() => {
     const cleanup = initialize();
     return cleanup;
   }, [initialize]);
+
+  // Detect 401 session expired errors globally
+  useEffect(() => {
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (
+        event.type === 'updated' &&
+        event.query.state.status === 'error' &&
+        isSessionExpiredError(event.query.state.error)
+      ) {
+        if (!hasShown401Alert.current) {
+          hasShown401Alert.current = true;
+          supabase.auth.signOut().then(() => {
+            queryClient.clear();
+            Alert.alert(
+              'Session Expired',
+              'Please sign in again.',
+              [{
+                text: 'OK',
+                onPress: () => {
+                  hasShown401Alert.current = false;
+                  router.replace('/(auth)/login');
+                },
+              }],
+            );
+          });
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [router]);
 
   // Handle deep link URLs for password recovery
   const handleDeepLink = useCallback(
@@ -88,9 +131,14 @@ export default function RootLayout() {
     >
       <QueryClientProvider client={queryClient}>
         <StatusBar style="light" />
-        <AuthGate>
-          <Stack screenOptions={{ headerShown: false }} />
-        </AuthGate>
+        <View style={{ flex: 1 }} className="bg-dark">
+          <OfflineBanner />
+          <View style={{ flex: 1 }}>
+            <AuthGate>
+              <Stack screenOptions={{ headerShown: false }} />
+            </AuthGate>
+          </View>
+        </View>
       </QueryClientProvider>
     </StripeProvider>
   );

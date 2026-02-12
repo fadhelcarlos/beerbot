@@ -5,7 +5,6 @@ import {
   Pressable,
   FlatList,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,6 +23,8 @@ import {
   fetchVenueTaps,
   subscribeTaps,
 } from '@/lib/api/venues';
+import { formatErrorMessage } from '@/lib/utils/error-handler';
+import SkeletonLoader from '@/components/SkeletonLoader';
 import type { TapWithBeer, Tap } from '@/types/api';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -401,17 +402,15 @@ export default function VenueDetailScreen() {
 
       {/* Content */}
       {isLoading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#f59e0b" size="large" />
-          <Text className="text-white/40 text-sm mt-4">
-            Loading beers...
-          </Text>
-        </View>
+        <SkeletonLoader type="beer" count={4} />
       ) : venueQuery.isError || tapsQuery.isError ? (
         <View className="flex-1 items-center justify-center px-8">
           <Text className="text-3xl mb-3">{'\u26A0\uFE0F'}</Text>
           <Text className="text-white/70 text-base text-center">
-            Failed to load beers. Pull down to try again.
+            {formatErrorMessage(venueQuery.error ?? tapsQuery.error)}
+          </Text>
+          <Text className="text-white/40 text-sm text-center mt-2">
+            Pull down to try again
           </Text>
         </View>
       ) : (

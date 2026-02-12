@@ -12,6 +12,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { getOrderHistoryWithDetails } from '@/lib/api/orders';
+import { formatErrorMessage } from '@/lib/utils/error-handler';
+import SkeletonLoader from '@/components/SkeletonLoader';
 import type { OrderWithDetails, OrderStatus } from '@/types/api';
 
 const PAGE_SIZE = 20;
@@ -158,6 +160,7 @@ export default function OrdersScreen() {
     data,
     isLoading,
     isError,
+    error,
     isFetchingNextPage,
     hasNextPage,
     fetchNextPage,
@@ -224,17 +227,15 @@ export default function OrdersScreen() {
 
       {/* Content */}
       {isLoading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#f59e0b" size="large" />
-          <Text className="text-white/40 text-sm mt-4">
-            Loading orders...
-          </Text>
-        </View>
+        <SkeletonLoader type="order" count={5} />
       ) : isError ? (
         <View className="flex-1 items-center justify-center px-8">
           <Text className="text-3xl mb-3">{'\u26A0\uFE0F'}</Text>
           <Text className="text-white/70 text-base text-center">
-            Failed to load orders. Pull down to try again.
+            {formatErrorMessage(error)}
+          </Text>
+          <Text className="text-white/40 text-sm text-center mt-2">
+            Pull down to try again
           </Text>
         </View>
       ) : (

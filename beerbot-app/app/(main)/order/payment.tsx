@@ -11,6 +11,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import NetInfo from '@react-native-community/netinfo';
 import { fetchVenueTaps, subscribeTaps } from '@/lib/api/venues';
 import { createOrder, getOrder } from '@/lib/api/orders';
 import {
@@ -18,6 +19,7 @@ import {
   presentPayment,
 } from '@/lib/api/payments';
 import { supabase } from '@/lib/supabase';
+import { formatErrorMessage } from '@/lib/utils/error-handler';
 import type { Order, Tap, TapWithBeer } from '@/types/api';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -160,9 +162,7 @@ export default function PaymentScreen() {
         setPaymentState('ready');
       } catch (err) {
         if (cancelled) return;
-        const message =
-          err instanceof Error ? err.message : 'Failed to set up payment';
-        setErrorMessage(message);
+        setErrorMessage(formatErrorMessage(err));
         setPaymentState('error');
       }
     }
@@ -295,6 +295,38 @@ export default function PaymentScreen() {
   }, []);
 
   // ─────────────────────────────────────────────────
+  // Network drop detection: if network drops mid-payment, show checking status
+  // and auto-start polling when reconnected
+  // ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!orderId) return;
+
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const wasProcessing =
+        paymentState === 'processing' || paymentState === 'checking_status';
+      if (
+        state.isConnected === false &&
+        wasProcessing &&
+        !statusPollRef.current
+      ) {
+        setPaymentState('checking_status');
+      }
+
+      if (
+        state.isConnected &&
+        paymentState === 'checking_status' &&
+        !statusPollRef.current &&
+        !hasNavigated.current
+      ) {
+        startStatusPolling();
+      }
+    });
+
+    return () => unsubscribe();
+  }, [orderId, paymentState, startStatusPolling]);
+
+  // ─────────────────────────────────────────────────
   // Handle Pay Button
   // ─────────────────────────────────────────────────
 
@@ -325,9 +357,7 @@ export default function PaymentScreen() {
       }, 5000);
     } catch (err) {
       isPayingRef.current = false;
-      const message =
-        err instanceof Error ? err.message : 'Payment failed';
-      setErrorMessage(message);
+      setErrorMessage(formatErrorMessage(err));
       setPaymentState('failed');
     }
   }, [paymentState, startStatusPolling]);
@@ -348,9 +378,7 @@ export default function PaymentScreen() {
       await initializePaymentSheet(orderId);
       setPaymentState('ready');
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to set up payment';
-      setErrorMessage(message);
+      setErrorMessage(formatErrorMessage(err));
       setPaymentState('error');
     }
   }, [orderId]);

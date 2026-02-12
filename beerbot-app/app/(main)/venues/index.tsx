@@ -6,7 +6,6 @@ import {
   Pressable,
   FlatList,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +13,8 @@ import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import * as Location from 'expo-location';
 import { useQuery } from '@tanstack/react-query';
 import { fetchVenues, fetchVenueActiveTapCounts } from '@/lib/api/venues';
+import { formatErrorMessage } from '@/lib/utils/error-handler';
+import SkeletonLoader from '@/components/SkeletonLoader';
 import type { VenueWithDistance } from '@/types/api';
 
 const NEARBY_THRESHOLD_MILES = 0.124; // ~200m
@@ -302,17 +303,15 @@ export default function VenuesScreen() {
 
       {/* Content */}
       {isLoading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#f59e0b" size="large" />
-          <Text className="text-white/40 text-sm mt-4">
-            Loading venues...
-          </Text>
-        </View>
+        <SkeletonLoader type="venue" count={4} />
       ) : venuesQuery.isError ? (
         <View className="flex-1 items-center justify-center px-8">
           <Text className="text-3xl mb-3">{'\u26A0\uFE0F'}</Text>
           <Text className="text-white/70 text-base text-center">
-            Failed to load venues. Pull down to try again.
+            {formatErrorMessage(venuesQuery.error)}
+          </Text>
+          <Text className="text-white/40 text-sm text-center mt-2">
+            Pull down to try again
           </Text>
         </View>
       ) : (

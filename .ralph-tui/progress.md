@@ -23,6 +23,8 @@ after each iteration and it's included in prompts for context.
 - **Edge Functions pattern**: `supabase/functions/{fn-name}/index.ts` — Deno runtime with ESM imports from `esm.sh`. Use two Supabase clients: user JWT client (for identity) + service_role client (for privileged writes). Must exclude `supabase/functions` from `tsconfig.json` (Deno != Node).
 - **Edge Function invocation**: `supabase.functions.invoke<T>(fnName, { method })` — auto-passes user's auth token. Returns typed `{ data, error }`.
 - **Cron-safe DB functions**: Use `FOR UPDATE SKIP LOCKED` when writing PL/pgSQL functions called by pg_cron — prevents deadlocks if jobs overlap. Prefer SQL `SET col = col + X` for atomic increments over Supabase JS read-then-write.
+- **Offline/Error pattern**: `@react-native-community/netinfo` for network detection, `OfflineBanner` in root layout, `SkeletonLoader` for list loading states (venue/beer/order variants), `lib/utils/error-handler.ts` for centralized user-friendly error formatting. TanStack Query `onlineManager` synced with NetInfo. 401 detection via query cache subscription + auto-redirect to login.
+- **TanStack Query retry**: Exponential backoff via `retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000)`, max 3 retries, never retry on 401 (session expired).
 
 ---
 
@@ -1002,5 +1004,41 @@ after each iteration and it's included in prompts for context.
   - `router.replace()` with typed routes for dynamic segments requires a type assertion: `as \`/(main)/venues/\${string}\`` — same pattern established in US-022
   - Inventory availability checks for mobile ordering should block both 'low' and 'out' states — 'low' means stock should be reserved for in-person orders at the station
   - When adding realtime subscriptions to multiple screens in the same flow, each manages its own channel lifecycle via refs and useEffect cleanup — no shared subscription manager needed since Supabase handles channel deduplication by name
+---
+
+## 2026-02-11 - US-028
+- What was implemented:
+  - Created `components/OfflineBanner.tsx`: detects network status using `@react-native-community/netinfo`, shows persistent red banner "You're offline — some features may be unavailable" with slide-in/slide-out animation
+  - Created `components/SkeletonLoader.tsx`: reusable skeleton placeholder component with pulsing animation for loading states — includes `VenueCardSkeleton`, `BeerCardSkeleton`, `OrderCardSkeleton` variants plus a generic `SkeletonLoader` wrapper with configurable type and count
+  - Created `lib/utils/error-handler.ts`: centralized error formatting that maps Supabase auth errors, HTTP status codes, and network errors to user-friendly messages — never exposes raw error codes or stack traces. Includes `isSessionExpiredError()` for 401 detection and `formatErrorMessage()` for universal error display.
+  - Updated `lib/query-client.ts`: added exponential backoff retry delay (`1s, 2s, 4s`), max 3 retries, never retries on 401 (session expired). Applied to both queries and mutations.
+  - Updated `app/_layout.tsx`: integrated `OfflineBanner` in root layout, synced TanStack Query `onlineManager` with NetInfo for automatic pause/resume of queries when offline, imported shared `queryClient` from `lib/query-client.ts` (was previously creating a separate inline instance), added 401 session expired detection via query cache subscription — auto signs out, clears cache, shows alert, and redirects to login
+  - Updated venues list (`app/(main)/venues/index.tsx`): replaced `ActivityIndicator` loading state with `SkeletonLoader` (venue type), added `formatErrorMessage` for error states
+  - Updated beer list (`app/(main)/venues/[id].tsx`): replaced `ActivityIndicator` loading state with `SkeletonLoader` (beer type), added `formatErrorMessage` for error states
+  - Updated order history (`app/(main)/orders/index.tsx`): replaced `ActivityIndicator` loading state with `SkeletonLoader` (order type), added `formatErrorMessage` for error states
+  - Updated payment screen (`app/(main)/order/payment.tsx`): added NetInfo listener for network drop detection mid-payment — when network drops during processing, shows "Checking payment status..." and auto-starts polling (3s intervals) when reconnected. All error messages now use `formatErrorMessage` instead of raw error strings.
+  - QR/Redeem screen works offline since QR is rendered client-side from stored `qr_code_token` via `react-native-qrcode-svg` — no network required to display
+  - Installed `@react-native-community/netinfo` package
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes (0 errors, 0 warnings)
+- Files changed:
+  - `components/OfflineBanner.tsx` — offline detection banner (new)
+  - `components/SkeletonLoader.tsx` — reusable skeleton loading components (new)
+  - `lib/utils/error-handler.ts` — centralized error formatting (new)
+  - `lib/query-client.ts` — exponential backoff retry + 401 detection (updated)
+  - `app/_layout.tsx` — OfflineBanner integration, NetInfo/onlineManager sync, shared queryClient, 401 cache subscription (updated)
+  - `app/(main)/venues/index.tsx` — skeleton loader + error formatting (updated)
+  - `app/(main)/venues/[id].tsx` — skeleton loader + error formatting (updated)
+  - `app/(main)/orders/index.tsx` — skeleton loader + error formatting (updated)
+  - `app/(main)/order/payment.tsx` — NetInfo mid-payment detection + error formatting (updated)
+  - `package.json` — added `@react-native-community/netinfo` dependency
+- **Learnings:**
+  - `@react-native-community/netinfo` `addEventListener` provides both `isConnected` (physical link) and `isInternetReachable` (actual internet access) — check both for robust offline detection
+  - TanStack Query's `onlineManager.setEventListener()` accepts a NetInfo listener directly — this automatically pauses queries when offline and resumes + refetches when back online, without any manual queue management
+  - The root `_layout.tsx` was creating its own inline `QueryClient` separate from `lib/query-client.ts` — this meant the retry/backoff config wasn't being used. Fixing to import the shared instance ensures all queries use the configured retry strategy.
+  - For 401 session expired detection, subscribing to `queryClient.getQueryCache()` events is the cleanest approach — it catches all query errors globally without needing per-screen error handling. Use a `useRef` flag to prevent multiple alerts from concurrent failing queries.
+  - Skeleton loaders with `useSharedValue` + `withRepeat(withTiming(...))` provide smooth pulsing animations. Using `opacity: 1 - index * 0.15` on each skeleton card creates a subtle depth effect.
+  - The OfflineBanner must NOT add its own `paddingTop: insets.top` in the root layout since child screens already handle their own safe area padding — adding it would double the padding.
+  - For payment network drop detection, the pattern is: (1) detect offline → show "Checking payment status...", (2) detect reconnection → auto-start polling at 3s intervals, (3) timeout after 30s → show error with fallback to order history
 ---
 

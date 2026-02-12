@@ -142,6 +142,12 @@ export interface Order {
   updated_at: string;
 }
 
+export interface OrderWithDetails extends Order {
+  beer_name: string;
+  beer_style: string;
+  venue_name: string;
+}
+
 export interface OrderEvent {
   id: string;
   order_id: string;

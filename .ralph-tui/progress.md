@@ -810,3 +810,45 @@ after each iteration and it's included in prompts for context.
   - `expo-haptics` does not require an `app.json` plugin entry — it works out of the box with Expo SDK 54
 ---
 
+## 2026-02-11 - US-023
+- What was implemented:
+  - Created `app/(main)/orders/index.tsx` — full Order History list screen:
+    - TanStack Query `useInfiniteQuery` for paginated data fetching (20 orders per page)
+    - Each order card shows: beer name, venue name, date/time (smart formatting: Today/Yesterday/weekday), quantity, total amount, status badge
+    - Status badges color-coded: green (completed), yellow (active states: pending/paid/ready/redeemed/pouring), red (expired/cancelled), blue (refunded)
+    - Tapping an order navigates to order detail screen at `/(main)/orders/[id]`
+    - Infinite scroll via `onEndReached` with loading spinner footer
+    - Empty state: beer emoji + "Your order history will appear here after your first pour!"
+    - Pull-to-refresh via RefreshControl
+    - Chronologically sorted newest first
+    - BeerBot dark theme with brand amber accents, FadeIn/FadeInDown staggered entrance animations
+  - Created `app/(main)/orders/[id].tsx` — order detail screen:
+    - Fetches order by ID via `getOrder()`
+    - Displays order status badge, order ID, quantity, pricing, and timestamps
+    - Back navigation button
+  - Converted `app/(main)/_layout.tsx` from Stack to Tabs navigator:
+    - Two visible tabs: Venues (beer mug icon) and Orders (clipboard icon)
+    - Order flow screens (`order/*`) hidden from tab bar via `href: null`
+    - Tab bar styled with BeerBot dark theme (navy background, amber active color)
+  - Added `getOrderHistoryWithDetails()` to `lib/api/orders.ts`:
+    - Supabase nested select `'*, beers (name, style), venues (name)'` for relational joins
+    - Maps joined data into flat `OrderWithDetails` type with `beer_name`, `beer_style`, `venue_name`
+    - Offset-based pagination for infinite scroll support
+  - Added `OrderWithDetails` interface to `types/api.ts` extending `Order` with beer/venue display names
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes (0 errors, 0 warnings)
+- Files changed:
+  - `app/(main)/_layout.tsx` — converted from Stack to Tabs navigator (rewritten)
+  - `app/(main)/orders/index.tsx` — order history list screen (new)
+  - `app/(main)/orders/[id].tsx` — order detail screen (new)
+  - `lib/api/orders.ts` — added `getOrderHistoryWithDetails` with joins
+  - `types/api.ts` — added `OrderWithDetails` interface
+- **Learnings:**
+  - Expo Router `Tabs` component can hide child routes from the tab bar using `href: null` in screen options — this allows order flow screens to exist in the same route group without appearing as tabs
+  - Supabase nested select `'*, beers (name, style), venues (name)'` joins via FK relationships and returns joined data as nested objects keyed by table name (plural: `beers`, `venues`)
+  - For `useInfiniteQuery` with offset-based pagination, `getNextPageParam` calculates the total offset from `allPages.reduce()` and returns `undefined` when the last page has fewer items than `PAGE_SIZE` (signals no more data)
+  - `FlatList` `onEndReached` with `onEndReachedThreshold={0.5}` provides smooth infinite scroll — triggers when the user is halfway through the remaining content
+  - Smart date formatting (Today/Yesterday/weekday/full date) provides better UX than raw timestamps for order history
+  - `@react-navigation/bottom-tabs` is already included as a transitive dependency of `expo-router` — no additional install needed
+---
+

@@ -336,3 +336,47 @@ after each iteration and it's included in prompts for context.
   - The `AuthGate` pattern (wrapper component in root layout) is the standard Expo Router approach for auth-gated navigation — avoids race conditions by checking auth state before rendering routes
 ---
 
+## 2026-02-11 - US-006
+- What was implemented:
+  - Created `supabase/functions/generate-qr-token/index.ts` (Deno Edge Function):
+    - Authenticates user via JWT from Authorization header
+    - Validates order exists, belongs to requesting user, and has status `paid` or `ready_to_redeem`
+    - Idempotent: returns existing token if one was already generated
+    - Creates JWT signed with HMAC-SHA256 using `QR_TOKEN_SECRET` (Supabase secret)
+    - JWT payload: `order_id`, `tap_id`, `venue_id`, `user_id`, `exp`, `iat`
+    - Token expiration matches `order.expires_at` (or defaults to 15 minutes)
+    - Stores token in `orders.qr_code_token`, sets `qr_expires_at`, updates status to `ready_to_redeem`
+    - Logs `qr_token_generated` event to `order_events`
+    - Uses `djwt` library (Deno JWT) for JWT creation with Web Crypto API key import
+  - Created `supabase/functions/verify-qr-token/index.ts` (Deno Edge Function):
+    - Authenticates caller (venue staff/admin) via JWT
+    - Verifies QR token JWT: signature valid, not expired
+    - Validates order exists, token matches stored `qr_code_token`, order status is `ready_to_redeem`
+    - Cross-checks JWT payload fields (venue_id, tap_id, user_id) against order record
+    - Single-use enforcement: marks order as `redeemed` with optimistic lock (`WHERE status = 'ready_to_redeem'`)
+    - Sets `redeemed_at` timestamp, logs `redeemed` event to `order_events`
+    - Returns detailed error codes: `INVALID_TOKEN`, `ORDER_NOT_FOUND`, `TOKEN_MISMATCH`, `ALREADY_REDEEMED`, `ORDER_EXPIRED`, etc.
+  - Created `lib/utils/qr.ts` with client-side helpers:
+    - `generateQrDataString(token)` — produces `beerbot://redeem?token=<jwt>` deep link string for QR code rendering
+    - `generateQrToken(orderId)` — invokes `generate-qr-token` Edge Function via `supabase.functions.invoke()`
+    - `verifyQrToken(token)` — invokes `verify-qr-token` Edge Function via `supabase.functions.invoke()`
+  - Updated `types/api.ts`:
+    - Added `GenerateQrTokenRequest`, `GenerateQrTokenResponse`, `VerifyQrTokenRequest`, `VerifyQrTokenResponse` interfaces
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `supabase/functions/generate-qr-token/index.ts` — QR token generation Edge Function (new)
+  - `supabase/functions/verify-qr-token/index.ts` — QR token verification Edge Function (new)
+  - `lib/utils/qr.ts` — client-side QR helpers (new)
+  - `types/api.ts` — added QR token request/response types
+- **Learnings:**
+  - Deno has `djwt` (`https://deno.land/x/djwt@v3.0.2/mod.ts`) for JWT operations — uses Web Crypto API (`crypto.subtle.importKey`) for HMAC keys, not Node's `createHmac`
+  - `djwt` `create()` requires a `CryptoKey` object, not a raw string — must import key via `crypto.subtle.importKey("raw", ...)` with `{ name: "HMAC", hash: "SHA-256" }`
+  - `getNumericDate()` from `djwt` converts a Date to a numeric Unix timestamp for JWT `exp`/`iat` claims
+  - The `qr_code_token` column already existed in the initial schema (US-002) with UNIQUE constraint and index — no migration needed
+  - Idempotent token generation (return existing token if already generated) prevents duplicate tokens and simplifies client retry logic
+  - Optimistic locking via `.eq("status", "ready_to_redeem")` in the update query ensures single-use: concurrent redemption attempts will fail because only the first one matches the WHERE clause
+  - `beerbot://redeem?token=<jwt>` deep link format leverages the existing `beerbot://` scheme configured in `app.json`, enabling venue scanning devices to trigger the verification flow
+  - `QR_TOKEN_SECRET` must be set as a Supabase secret (`supabase secrets set QR_TOKEN_SECRET=<value>`) — it's separate from the Supabase JWT secret
+---
+

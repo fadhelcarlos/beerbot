@@ -149,3 +149,29 @@ export interface OrderEvent {
   metadata: Record<string, unknown> | null;
   created_at: string;
 }
+
+// ============================================================
+// QR Tokens
+// ============================================================
+
+export interface GenerateQrTokenRequest {
+  order_id: string;
+}
+
+export interface GenerateQrTokenResponse {
+  qr_token: string;
+}
+
+export interface VerifyQrTokenRequest {
+  qr_token: string;
+}
+
+export interface VerifyQrTokenResponse {
+  valid: boolean;
+  order_id?: string;
+  tap_id?: string;
+  venue_id?: string;
+  user_id?: string;
+  error?: string;
+  code?: string;
+}

@@ -4,8 +4,8 @@ import {
   Text,
   Pressable,
   ScrollView,
-  ActivityIndicator,
   Alert,
+  StyleSheet,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,12 +17,24 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withSequence,
+  withRepeat,
+  withTiming,
+  Easing,
 } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Brightness from 'expo-brightness';
 import * as Haptics from 'expo-haptics';
 import { useKeepAwake } from 'expo-keep-awake';
 import QRCode from 'react-native-qrcode-svg';
 import LottieView from 'lottie-react-native';
+import {
+  Check,
+  Clock,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  ArrowLeft,
+} from 'lucide-react-native';
 import { getOrder } from '@/lib/api/orders';
 import { generateQrToken, generateQrDataString } from '@/lib/utils/qr';
 import { fetchVenue } from '@/lib/api/venues';
@@ -31,6 +43,16 @@ import {
   scheduleRedemptionWarnings,
   cancelScheduledNotification,
 } from '@/lib/notifications';
+import { GlassCard, GoldButton, ShimmerLoader } from '@/components/ui';
+import {
+  colors,
+  typography,
+  radius,
+  spacing,
+  shadows,
+  springs,
+  goldGradient,
+} from '@/lib/theme';
 import type { Order, OrderStatus } from '@/types/api';
 
 // ─────────────────────────────────────────────────
@@ -108,52 +130,81 @@ function formatCountdown(seconds: number | null): string {
 }
 
 // ─────────────────────────────────────────────────
-// Status Stepper Component
+// Status Stepper Component (Gold Gradient Design)
 // ─────────────────────────────────────────────────
 
 function StatusStepper({ currentStatus }: { currentStatus: OrderStatus }) {
   const currentIndex = getStepIndex(currentStatus);
+  const glowPulse = useSharedValue(1);
+
+  useEffect(() => {
+    glowPulse.value = withRepeat(
+      withSequence(
+        withTiming(1.15, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      false,
+    );
+  }, [glowPulse]);
+
+  const currentGlowStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: glowPulse.value }],
+  }));
 
   return (
-    <View className="flex-row items-center justify-between px-2">
+    <View style={stepperStyles.container}>
       {ORDER_STEPS.map((step, i) => {
         const isActive = i <= currentIndex;
         const isCurrent = i === currentIndex;
         const isLast = i === ORDER_STEPS.length - 1;
+        const isCompleted = i < currentIndex;
 
         return (
-          <View key={step.key} className="flex-row items-center flex-1">
+          <View key={step.key} style={stepperStyles.stepWrapper}>
             {/* Step circle */}
-            <View className="items-center">
-              <View
-                className={`w-8 h-8 rounded-full items-center justify-center ${
-                  isCurrent
-                    ? 'bg-brand'
-                    : isActive
-                      ? 'bg-brand/60'
-                      : 'bg-dark-600'
-                }`}
-              >
-                {isActive ? (
-                  <Text
-                    className={`text-xs font-bold ${
-                      isCurrent ? 'text-dark' : 'text-dark/70'
-                    }`}
+            <View style={stepperStyles.stepColumn}>
+              {isCurrent ? (
+                <Animated.View style={currentGlowStyle}>
+                  <LinearGradient
+                    colors={goldGradient.colors as unknown as [string, string, ...string[]]}
+                    start={goldGradient.start}
+                    end={goldGradient.end}
+                    style={[stepperStyles.stepCircle, shadows.glowSubtle]}
                   >
-                    {'\u2713'}
+                    <Check size={14} color={colors.bg.primary} strokeWidth={3} />
+                  </LinearGradient>
+                </Animated.View>
+              ) : isCompleted ? (
+                <LinearGradient
+                  colors={['rgba(200,162,77,0.6)', 'rgba(200,162,77,0.4)'] as [string, string]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={stepperStyles.stepCircle}
+                >
+                  <Check size={14} color={colors.bg.primary} strokeWidth={3} />
+                </LinearGradient>
+              ) : (
+                <View style={stepperStyles.stepCircleInactive}>
+                  <Text style={[typography.caption, { color: colors.text.tertiary }]}>
+                    {i + 1}
                   </Text>
-                ) : (
-                  <Text className="text-xs text-white/30">{i + 1}</Text>
-                )}
-              </View>
+                </View>
+              )}
               <Text
-                className={`text-[10px] mt-1 text-center ${
-                  isCurrent
-                    ? 'text-brand font-bold'
-                    : isActive
-                      ? 'text-white/60'
-                      : 'text-white/30'
-                }`}
+                style={[
+                  typography.overline,
+                  {
+                    color: isCurrent
+                      ? colors.gold[400]
+                      : isActive
+                        ? colors.text.secondary
+                        : colors.text.tertiary,
+                    marginTop: 4,
+                    textAlign: 'center',
+                    fontSize: 9,
+                  },
+                ]}
               >
                 {step.label}
               </Text>
@@ -161,12 +212,17 @@ function StatusStepper({ currentStatus }: { currentStatus: OrderStatus }) {
 
             {/* Connector line */}
             {!isLast && (
-              <View className="flex-1 mx-1">
-                <View
-                  className={`h-0.5 ${
-                    i < currentIndex ? 'bg-brand/60' : 'bg-dark-600'
-                  }`}
-                />
+              <View style={stepperStyles.connectorContainer}>
+                {i < currentIndex ? (
+                  <LinearGradient
+                    colors={['rgba(200,162,77,0.6)', 'rgba(200,162,77,0.3)'] as [string, string]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={stepperStyles.connector}
+                  />
+                ) : (
+                  <View style={stepperStyles.connectorInactive} />
+                )}
               </View>
             )}
           </View>
@@ -175,6 +231,55 @@ function StatusStepper({ currentStatus }: { currentStatus: OrderStatus }) {
     </View>
   );
 }
+
+const stepperStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+  },
+  stepWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flex: 1,
+  },
+  stepColumn: {
+    alignItems: 'center',
+  },
+  stepCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepCircleInactive: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.glass.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  connectorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    marginTop: 16,
+  },
+  connector: {
+    height: 2,
+    borderRadius: 1,
+  },
+  connectorInactive: {
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: colors.glass.border,
+  },
+});
 
 // ─────────────────────────────────────────────────
 // Main Screen
@@ -207,12 +312,51 @@ export default function RedeemScreen() {
 
   const remaining = useCountdown(order?.expires_at ?? null);
 
-  // Animated values for status transitions
+  // Animated values
   const stepperPulse = useSharedValue(1);
+  const qrBreathScale = useSharedValue(1);
+  const countdownPulse = useSharedValue(1);
 
   const stepperPulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: stepperPulse.value }],
   }));
+
+  // QR breathing animation
+  const qrBreathStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: qrBreathScale.value }],
+  }));
+
+  useEffect(() => {
+    qrBreathScale.value = withRepeat(
+      withSequence(
+        withTiming(1.01, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1.0, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      false,
+    );
+  }, [qrBreathScale]);
+
+  // Countdown pulse animation when critical
+  const countdownPulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: countdownPulse.value }],
+  }));
+
+  useEffect(() => {
+    const isCritical = remaining != null && remaining <= 60;
+    if (isCritical) {
+      countdownPulse.value = withRepeat(
+        withSequence(
+          withTiming(1.05, { duration: 500 }),
+          withTiming(1.0, { duration: 500 }),
+        ),
+        -1,
+        false,
+      );
+    } else {
+      countdownPulse.value = withTiming(1, { duration: 300 });
+    }
+  }, [remaining, countdownPulse]);
 
   // Trigger haptic feedback on status change
   const triggerHaptic = useCallback(async (status: OrderStatus) => {
@@ -473,12 +617,9 @@ export default function RedeemScreen() {
 
   if (screenState === 'loading') {
     return (
-      <View
-        className="flex-1 bg-dark items-center justify-center"
-        style={{ paddingTop: insets.top }}
-      >
-        <ActivityIndicator color="#f59e0b" size="large" />
-        <Text className="text-white/40 text-sm mt-4">
+      <View style={[styles.screen, styles.screenCentered, { paddingTop: insets.top }]}>
+        <ShimmerLoader type="order" count={2} />
+        <Text style={[typography.caption, { color: colors.text.secondary, marginTop: 16 }]}>
           Preparing your QR code...
         </Text>
       </View>
@@ -492,29 +633,23 @@ export default function RedeemScreen() {
   if (screenState === 'error') {
     return (
       <View
-        className="flex-1 bg-dark"
-        style={{ paddingTop: insets.top, paddingBottom: insets.bottom + 16 }}
+        style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom + 16 }]}
       >
-        <View className="flex-1 items-center justify-center px-8">
-          <Animated.View entering={FadeIn.duration(400)} className="items-center">
-            <Text className="text-5xl">{'\u26A0\uFE0F'}</Text>
-            <Text className="text-white text-xl font-bold mt-6 text-center">
+        <View style={styles.errorContent}>
+          <Animated.View entering={FadeIn.duration(400)} style={styles.centeredContent}>
+            <View style={styles.errorIconCircle}>
+              <AlertTriangle size={36} color={colors.status.warning} />
+            </View>
+            <Text style={[typography.title, { color: colors.text.primary, textAlign: 'center', marginTop: 20 }]}>
               Something went wrong
             </Text>
-            <Text className="text-white/50 text-base mt-3 text-center leading-6">
+            <Text style={[typography.body, { color: colors.text.secondary, textAlign: 'center', marginTop: 12, lineHeight: 24 }]}>
               {errorMessage}
             </Text>
           </Animated.View>
         </View>
-        <View className="px-6">
-          <Pressable
-            onPress={handleBackToVenues}
-            className="w-full items-center justify-center rounded-2xl py-4 bg-dark-600 active:opacity-80"
-          >
-            <Text className="text-lg font-bold text-white">
-              Back to Venues
-            </Text>
-          </Pressable>
+        <View style={styles.ctaSection}>
+          <GoldButton label="Back to Venues" variant="ghost" onPress={handleBackToVenues} />
         </View>
       </View>
     );
@@ -527,37 +662,31 @@ export default function RedeemScreen() {
   if (screenState === 'expired') {
     return (
       <View
-        className="flex-1 bg-dark"
-        style={{ paddingTop: insets.top, paddingBottom: insets.bottom + 16 }}
+        style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom + 16 }]}
       >
-        <View className="flex-1 items-center justify-center px-8">
-          <Animated.View entering={FadeIn.duration(400)} className="items-center">
-            <Text className="text-5xl">{'\u23F0'}</Text>
-            <Text className="text-white text-2xl font-bold mt-6 text-center">
+        <View style={styles.errorContent}>
+          <Animated.View entering={FadeIn.duration(400)} style={styles.centeredContent}>
+            <View style={styles.expiredIconCircle}>
+              <Clock size={36} color={colors.text.secondary} />
+            </View>
+            <Text style={[typography.title, { color: colors.text.primary, textAlign: 'center', marginTop: 20 }]}>
               Order Expired
             </Text>
-            <Text className="text-white/50 text-base mt-3 text-center leading-6">
+            <Text style={[typography.body, { color: colors.text.secondary, textAlign: 'center', marginTop: 12, lineHeight: 24 }]}>
               Your redemption window has closed.
             </Text>
-            <View className="mt-5 bg-green-900/30 rounded-xl px-5 py-3 border border-green-500/30">
-              <Text className="text-green-400 text-sm font-semibold text-center">
+            <GlassCard goldAccent style={{ marginTop: 20 }}>
+              <Text style={[typography.label, { color: colors.status.success, textAlign: 'center' }]}>
                 You have not been charged
               </Text>
-              <Text className="text-green-400/60 text-xs text-center mt-1">
+              <Text style={[typography.caption, { color: 'rgba(52,211,153,0.6)', textAlign: 'center', marginTop: 4 }]}>
                 A full refund will be processed automatically
               </Text>
-            </View>
+            </GlassCard>
           </Animated.View>
         </View>
-        <View className="px-6 gap-3">
-          <Pressable
-            onPress={handleBackToVenues}
-            className="w-full items-center justify-center rounded-2xl py-4 bg-brand active:opacity-80"
-          >
-            <Text className="text-lg font-bold text-dark">
-              Order Again
-            </Text>
-          </Pressable>
+        <View style={styles.ctaSection}>
+          <GoldButton label="Order Again" onPress={handleBackToVenues} />
         </View>
       </View>
     );
@@ -570,20 +699,20 @@ export default function RedeemScreen() {
   if (screenState === 'pouring') {
     return (
       <View
-        className="flex-1 bg-dark"
-        style={{ paddingTop: insets.top, paddingBottom: insets.bottom + 16 }}
+        style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom + 16 }]}
       >
         {/* Status Stepper */}
         <Animated.View
-          style={stepperPulseStyle}
-          className="mx-6 mt-6"
+          style={[stepperPulseStyle, { marginHorizontal: spacing.screenPadding, marginTop: 24 }]}
         >
           <StatusStepper currentStatus={order?.status ?? 'pouring'} />
         </Animated.View>
 
-        <View className="flex-1 items-center justify-center px-8">
-          <Animated.View entering={FadeIn.duration(600)} className="items-center">
-            <View className="w-56 h-56">
+        <View style={styles.pouringContent}>
+          <Animated.View entering={FadeIn.duration(600)} style={styles.centeredContent}>
+            {/* Gold radial glow behind the Lottie */}
+            <View style={styles.pouringGlow} />
+            <View style={styles.lottieContainer}>
               <LottieView
                 ref={lottieRef}
                 source={require('@/assets/pouring-animation.json')}
@@ -594,13 +723,13 @@ export default function RedeemScreen() {
             </View>
             <Animated.Text
               entering={FadeInUp.delay(200).duration(400)}
-              className="text-2xl font-bold text-brand mt-4 text-center"
+              style={[typography.title, { color: colors.gold[400], marginTop: 16, textAlign: 'center' }]}
             >
               Pouring your beer...
             </Animated.Text>
             <Animated.Text
               entering={FadeInUp.delay(400).duration(400)}
-              className="text-base text-white/50 mt-2 text-center"
+              style={[typography.body, { color: colors.text.secondary, marginTop: 8, textAlign: 'center' }]}
             >
               {beerName ?? 'Your beer'} from Tap #{tapNumber ?? '?'}
             </Animated.Text>
@@ -617,20 +746,18 @@ export default function RedeemScreen() {
   if (screenState === 'completed') {
     return (
       <View
-        className="flex-1 bg-dark"
-        style={{ paddingTop: insets.top, paddingBottom: insets.bottom + 16 }}
+        style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom + 16 }]}
       >
         {/* Status Stepper */}
         <Animated.View
-          style={stepperPulseStyle}
-          className="mx-6 mt-6"
+          style={[stepperPulseStyle, { marginHorizontal: spacing.screenPadding, marginTop: 24 }]}
         >
           <StatusStepper currentStatus="completed" />
         </Animated.View>
 
-        <View className="flex-1 items-center justify-center px-8">
-          <Animated.View entering={FadeIn.duration(600)} className="items-center">
-            <View className="w-48 h-48">
+        <View style={styles.pouringContent}>
+          <Animated.View entering={FadeIn.duration(600)} style={styles.centeredContent}>
+            <View style={styles.celebrationLottie}>
               <LottieView
                 source={require('@/assets/celebration-animation.json')}
                 autoPlay
@@ -640,13 +767,13 @@ export default function RedeemScreen() {
             </View>
             <Animated.Text
               entering={FadeInUp.delay(200).duration(400)}
-              className="text-3xl font-bold text-brand mt-4 text-center"
+              style={[typography.display, { color: colors.gold[400], marginTop: 16, textAlign: 'center' }]}
             >
               Enjoy your beer!
             </Animated.Text>
             <Animated.Text
               entering={FadeInUp.delay(400).duration(400)}
-              className="text-base text-white/50 mt-2 text-center"
+              style={[typography.body, { color: colors.text.secondary, marginTop: 8, textAlign: 'center' }]}
             >
               {beerName ?? 'Your beer'} is ready. Cheers!
             </Animated.Text>
@@ -654,13 +781,8 @@ export default function RedeemScreen() {
         </View>
 
         {/* Done button */}
-        <View className="px-6">
-          <Pressable
-            onPress={handleDone}
-            className="w-full items-center justify-center rounded-2xl py-4 bg-brand active:opacity-80"
-          >
-            <Text className="text-lg font-bold text-dark">Done</Text>
-          </Pressable>
+        <View style={styles.ctaSection}>
+          <GoldButton label="Done" onPress={handleDone} />
         </View>
       </View>
     );
@@ -674,17 +796,13 @@ export default function RedeemScreen() {
   const isCritical = remaining != null && remaining <= 60;
 
   const countdownColor = isCritical
-    ? 'text-red-400'
+    ? colors.status.danger
     : isWarning
-      ? 'text-yellow-400'
-      : 'text-white';
-
-  const countdownHintColor = isCritical
-    ? 'text-red-400/70'
-    : 'text-yellow-400/70';
+      ? colors.status.warning
+      : colors.gold[400];
 
   return (
-    <View className="flex-1 bg-dark" style={{ paddingTop: insets.top }}>
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScrollView
         contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
@@ -692,8 +810,7 @@ export default function RedeemScreen() {
         {/* Status Stepper */}
         <Animated.View
           entering={FadeInDown.delay(50).duration(350)}
-          style={stepperPulseStyle}
-          className="mx-6 mt-6"
+          style={[stepperPulseStyle, { marginHorizontal: spacing.screenPadding, marginTop: 24 }]}
         >
           <StatusStepper currentStatus={order?.status ?? 'ready_to_redeem'} />
         </Animated.View>
@@ -701,93 +818,117 @@ export default function RedeemScreen() {
         {/* Header */}
         <Animated.View
           entering={FadeInDown.delay(100).duration(350)}
-          className="mx-6 mt-5 items-center"
+          style={styles.headerSection}
         >
-          <Text className="text-2xl font-bold text-white text-center">
+          <Text style={[typography.title, { color: colors.text.primary, textAlign: 'center' }]}>
             Your Beer is Ready!
           </Text>
         </Animated.View>
 
-        {/* QR Code */}
+        {/* QR Code with Gold Gradient Frame */}
         <Animated.View
           entering={FadeIn.delay(250).duration(500)}
-          className="mx-6 mt-5 items-center"
+          style={styles.qrSection}
         >
-          <View className="bg-white rounded-3xl p-6">
-            {qrData ? (
-              <QRCode value={qrData} size={240} />
-            ) : qrTimedOut ? (
-              <View className="w-60 h-60 items-center justify-center">
-                <Text className="text-red-500 text-base font-semibold text-center">
-                  Failed to generate QR code
-                </Text>
-                <Text className="text-gray-500 text-sm text-center mt-2">
-                  Please go back and try again
-                </Text>
+          <Animated.View style={qrBreathStyle}>
+            <LinearGradient
+              colors={goldGradient.colors as unknown as [string, string, ...string[]]}
+              start={goldGradient.start}
+              end={goldGradient.end}
+              style={[styles.qrGradientFrame, shadows.glow]}
+            >
+              <View style={styles.qrWhiteArea}>
+                {qrData ? (
+                  <QRCode value={qrData} size={220} />
+                ) : qrTimedOut ? (
+                  <View style={styles.qrErrorContainer}>
+                    <AlertTriangle size={24} color={colors.status.danger} />
+                    <Text style={[typography.label, { color: colors.status.danger, textAlign: 'center', marginTop: 8 }]}>
+                      Failed to generate QR code
+                    </Text>
+                    <Text style={[typography.caption, { color: colors.text.tertiary, textAlign: 'center', marginTop: 4 }]}>
+                      Please go back and try again
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.qrLoadingContainer}>
+                    <ShimmerLoader type="beer" count={1} />
+                    <Text style={[typography.caption, { color: colors.text.tertiary, marginTop: 8 }]}>
+                      Generating QR code...
+                    </Text>
+                  </View>
+                )}
               </View>
-            ) : (
-              <View className="w-60 h-60 items-center justify-center">
-                <ActivityIndicator color="#1a1a2e" />
-                <Text className="text-gray-500 text-xs mt-2">
-                  Generating QR code...
-                </Text>
-              </View>
-            )}
-          </View>
+            </LinearGradient>
+          </Animated.View>
         </Animated.View>
 
         {/* Go to Tap instruction */}
         <Animated.View
           entering={FadeInDown.delay(400).duration(350)}
-          className="mx-6 mt-5 items-center"
+          style={styles.headerSection}
         >
-          <Text className="text-3xl font-bold text-brand text-center">
+          <Text style={[typography.display, { color: colors.gold[400], textAlign: 'center' }]}>
             Go to Tap #{tapNumber ?? '?'}
           </Text>
         </Animated.View>
 
         {/* Step-by-step instructions */}
-        <Animated.View
-          entering={FadeInDown.delay(500).duration(350)}
-          className="mx-6 mt-4 bg-dark-700 rounded-2xl p-5 border border-dark-600"
-        >
-          <View className="flex-row items-start mb-3">
-            <View className="w-7 h-7 rounded-full bg-brand/20 items-center justify-center mr-3 mt-0.5">
-              <Text className="text-sm font-bold text-brand">1</Text>
-            </View>
-            <Text className="text-base text-white/80 flex-1">
-              Walk to Tap #{tapNumber ?? '?'}
-            </Text>
-          </View>
-          <View className="flex-row items-start mb-3">
-            <View className="w-7 h-7 rounded-full bg-brand/20 items-center justify-center mr-3 mt-0.5">
-              <Text className="text-sm font-bold text-brand">2</Text>
-            </View>
-            <Text className="text-base text-white/80 flex-1">
-              Scan this code
-            </Text>
-          </View>
-          <View className="flex-row items-start">
-            <View className="w-7 h-7 rounded-full bg-brand/20 items-center justify-center mr-3 mt-0.5">
-              <Text className="text-sm font-bold text-brand">3</Text>
-            </View>
-            <Text className="text-base text-white/80 flex-1">
-              Enjoy your beer!
-            </Text>
-          </View>
+        <Animated.View entering={FadeInDown.delay(500).duration(350)}>
+          <GlassCard style={styles.instructionsCard}>
+            {[
+              `Walk to Tap #${tapNumber ?? '?'}`,
+              'Scan this code',
+              'Enjoy your beer!',
+            ].map((text, i) => (
+              <View key={i} style={[styles.instructionRow, i > 0 && { marginTop: 12 }]}>
+                <LinearGradient
+                  colors={goldGradient.colors as unknown as [string, string, ...string[]]}
+                  start={goldGradient.start}
+                  end={goldGradient.end}
+                  style={styles.instructionCircle}
+                >
+                  <Text style={[typography.caption, { color: colors.bg.primary, fontWeight: '700' }]}>
+                    {i + 1}
+                  </Text>
+                </LinearGradient>
+                <Text style={[typography.body, { color: colors.text.primary, flex: 1, marginLeft: 12 }]}>
+                  {text}
+                </Text>
+              </View>
+            ))}
+          </GlassCard>
         </Animated.View>
 
         {/* Countdown Timer */}
         <Animated.View
           entering={FadeInDown.delay(600).duration(350)}
-          className="mx-6 mt-4 items-center"
+          style={styles.countdownSection}
         >
-          <Text className="text-sm text-white/50 mb-2">Time remaining</Text>
-          <Text className={`text-4xl font-bold ${countdownColor}`}>
-            {formatCountdown(remaining)}
+          <Text style={[typography.overline, { color: colors.text.secondary, marginBottom: 8 }]}>
+            Time remaining
           </Text>
+          <Animated.View style={countdownPulseStyle}>
+            <Text
+              style={[
+                typography.display,
+                { color: countdownColor, textAlign: 'center' },
+              ]}
+            >
+              {formatCountdown(remaining)}
+            </Text>
+          </Animated.View>
           {(isWarning || isCritical) && remaining != null && remaining > 0 && (
-            <Text className={`text-xs ${countdownHintColor} mt-1`}>
+            <Text
+              style={[
+                typography.caption,
+                {
+                  color: isCritical ? 'rgba(248,113,113,0.7)' : 'rgba(251,191,36,0.7)',
+                  marginTop: 4,
+                  textAlign: 'center',
+                },
+              ]}
+            >
               {isCritical
                 ? 'Last chance! Redeem now'
                 : 'Hurry! Your code expires soon'}
@@ -796,103 +937,106 @@ export default function RedeemScreen() {
         </Animated.View>
 
         {/* Order Summary */}
-        <Animated.View
-          entering={FadeInDown.delay(700).duration(350)}
-          className="mx-6 mt-4 bg-dark-700 rounded-2xl p-4 border border-dark-600"
-        >
-          <View className="flex-row justify-between items-center mb-2">
-            <Text className="text-sm text-white/50">Beer</Text>
-            <Text className="text-sm text-white font-medium">
-              {beerName ?? 'Loading...'}
-            </Text>
-          </View>
-          <View className="flex-row justify-between items-center mb-2">
-            <Text className="text-sm text-white/50">Quantity</Text>
-            <Text className="text-sm text-white font-medium">
-              {order?.quantity ?? '-'}
-            </Text>
-          </View>
-          <View className="flex-row justify-between items-center">
-            <Text className="text-sm text-white/50">Venue</Text>
-            <Text className="text-sm text-white font-medium">
-              {venueName ?? 'Loading...'}
-            </Text>
-          </View>
+        <Animated.View entering={FadeInDown.delay(700).duration(350)}>
+          <GlassCard style={styles.summaryCard}>
+            <View style={styles.summaryRow}>
+              <Text style={[typography.label, { color: colors.text.secondary }]}>Beer</Text>
+              <Text style={[typography.label, { color: colors.text.primary }]}>
+                {beerName ?? 'Loading...'}
+              </Text>
+            </View>
+            <View style={[styles.summaryRow, { marginTop: 8 }]}>
+              <Text style={[typography.label, { color: colors.text.secondary }]}>Quantity</Text>
+              <Text style={[typography.label, { color: colors.text.primary }]}>
+                {order?.quantity ?? '-'}
+              </Text>
+            </View>
+            <View style={[styles.summaryRow, { marginTop: 8 }]}>
+              <Text style={[typography.label, { color: colors.text.secondary }]}>Venue</Text>
+              <Text style={[typography.label, { color: colors.text.primary }]}>
+                {venueName ?? 'Loading...'}
+              </Text>
+            </View>
+          </GlassCard>
         </Animated.View>
 
         {/* View Order Details - Expandable */}
         <Animated.View
           entering={FadeInDown.delay(800).duration(350)}
-          className="mx-6 mt-3"
+          style={{ marginHorizontal: spacing.screenPadding, marginTop: 12 }}
         >
           <Pressable
             onPress={() => setDetailsExpanded((prev) => !prev)}
-            className="flex-row items-center justify-center py-3 active:opacity-60"
+            style={styles.detailsToggle}
           >
-            <Text className="text-sm text-brand font-semibold mr-1">
+            <Text style={[typography.label, { color: colors.gold[400] }]}>
               {detailsExpanded ? 'Hide' : 'View'} Order Details
             </Text>
-            <Text className="text-xs text-brand">
-              {detailsExpanded ? '\u25B2' : '\u25BC'}
-            </Text>
+            {detailsExpanded ? (
+              <ChevronUp size={16} color={colors.gold[400]} />
+            ) : (
+              <ChevronDown size={16} color={colors.gold[400]} />
+            )}
           </Pressable>
 
           {detailsExpanded && order && (
-            <View className="bg-dark-700 rounded-2xl p-4 border border-dark-600 mt-1">
-              <View className="flex-row justify-between items-center mb-2">
-                <Text className="text-xs text-white/40">Order ID</Text>
-                <Text className="text-xs text-white/60 font-mono">
+            <GlassCard style={{ marginTop: 8 }}>
+              <View style={styles.detailRow}>
+                <Text style={[typography.caption, { color: colors.text.tertiary }]}>Order ID</Text>
+                <Text style={[typography.caption, { color: colors.text.secondary }]}>
                   {order.id.slice(0, 8)}...
                 </Text>
               </View>
-              <View className="flex-row justify-between items-center mb-2">
-                <Text className="text-xs text-white/40">Status</Text>
-                <Text className="text-xs text-white/60 capitalize">
+              <View style={[styles.detailRow, { marginTop: 8 }]}>
+                <Text style={[typography.caption, { color: colors.text.tertiary }]}>Status</Text>
+                <Text style={[typography.caption, { color: colors.text.secondary, textTransform: 'capitalize' }]}>
                   {order.status.replace(/_/g, ' ')}
                 </Text>
               </View>
-              <View className="flex-row justify-between items-center mb-2">
-                <Text className="text-xs text-white/40">Serving Size</Text>
-                <Text className="text-xs text-white/60">
+              <View style={[styles.detailRow, { marginTop: 8 }]}>
+                <Text style={[typography.caption, { color: colors.text.tertiary }]}>Serving Size</Text>
+                <Text style={[typography.caption, { color: colors.text.secondary }]}>
                   {order.pour_size_oz} oz
                 </Text>
               </View>
-              <View className="flex-row justify-between items-center mb-2">
-                <Text className="text-xs text-white/40">Unit Price</Text>
-                <Text className="text-xs text-white/60">
+              <View style={[styles.detailRow, { marginTop: 8 }]}>
+                <Text style={[typography.caption, { color: colors.text.tertiary }]}>Unit Price</Text>
+                <Text style={[typography.caption, { color: colors.text.secondary }]}>
                   ${order.unit_price.toFixed(2)}
                 </Text>
               </View>
-              <View className="h-px bg-dark-600 my-2" />
-              <View className="flex-row justify-between items-center mb-2">
-                <Text className="text-xs text-white/40">Total Paid</Text>
-                <Text className="text-xs text-brand font-semibold">
+              <View style={styles.goldDivider} />
+              <View style={styles.detailRow}>
+                <Text style={[typography.caption, { color: colors.text.tertiary }]}>Total Paid</Text>
+                <Text style={[typography.caption, { color: colors.gold[400], fontWeight: '600' }]}>
                   ${order.total_amount.toFixed(2)}
                 </Text>
               </View>
               {order.paid_at && (
-                <View className="flex-row justify-between items-center mb-2">
-                  <Text className="text-xs text-white/40">Paid At</Text>
-                  <Text className="text-xs text-white/60">
+                <View style={[styles.detailRow, { marginTop: 8 }]}>
+                  <Text style={[typography.caption, { color: colors.text.tertiary }]}>Paid At</Text>
+                  <Text style={[typography.caption, { color: colors.text.secondary }]}>
                     {new Date(order.paid_at).toLocaleTimeString()}
                   </Text>
                 </View>
               )}
               {order.expires_at && (
-                <View className="flex-row justify-between items-center">
-                  <Text className="text-xs text-white/40">Expires At</Text>
-                  <Text className="text-xs text-white/60">
+                <View style={[styles.detailRow, { marginTop: 8 }]}>
+                  <Text style={[typography.caption, { color: colors.text.tertiary }]}>Expires At</Text>
+                  <Text style={[typography.caption, { color: colors.text.secondary }]}>
                     {new Date(order.expires_at).toLocaleTimeString()}
                   </Text>
                 </View>
               )}
-            </View>
+            </GlassCard>
           )}
         </Animated.View>
 
         {/* Leave button */}
-        <View className="mx-6 mt-5">
-          <Pressable
+        <View style={{ marginHorizontal: spacing.screenPadding, marginTop: 20 }}>
+          <GoldButton
+            label="Back to Venues"
+            variant="ghost"
             onPress={() => {
               Alert.alert(
                 'Leave QR Screen?',
@@ -906,14 +1050,152 @@ export default function RedeemScreen() {
                 ],
               );
             }}
-            className="w-full items-center justify-center rounded-2xl py-4 bg-dark-600 active:opacity-80"
-          >
-            <Text className="text-base font-semibold text-white/70">
-              Back to Venues
-            </Text>
-          </Pressable>
+          />
         </View>
       </ScrollView>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+  },
+  screenCentered: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.screenPadding,
+  },
+  centeredContent: {
+    alignItems: 'center',
+  },
+  headerSection: {
+    marginHorizontal: spacing.screenPadding,
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  qrSection: {
+    marginHorizontal: spacing.screenPadding,
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  qrGradientFrame: {
+    padding: 4,
+    borderRadius: radius['3xl'],
+  },
+  qrWhiteArea: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius['2xl'],
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qrErrorContainer: {
+    width: 220,
+    height: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qrLoadingContainer: {
+    width: 220,
+    height: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  instructionsCard: {
+    marginHorizontal: spacing.screenPadding,
+    marginTop: 16,
+  },
+  instructionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  instructionCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countdownSection: {
+    marginHorizontal: spacing.screenPadding,
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  summaryCard: {
+    marginHorizontal: spacing.screenPadding,
+    marginTop: 16,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  detailsToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 4,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  goldDivider: {
+    height: 1,
+    backgroundColor: 'rgba(200,162,77,0.15)',
+    marginVertical: 8,
+  },
+  errorContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.screenPadding,
+  },
+  errorIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.status.warningMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expiredIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.glass.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctaSection: {
+    paddingHorizontal: spacing.screenPadding,
+  },
+  pouringContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.screenPadding,
+  },
+  pouringGlow: {
+    position: 'absolute',
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: 'rgba(200,162,77,0.06)',
+    ...shadows.glow,
+  },
+  lottieContainer: {
+    width: 224,
+    height: 224,
+  },
+  celebrationLottie: {
+    width: 192,
+    height: 192,
+  },
+});

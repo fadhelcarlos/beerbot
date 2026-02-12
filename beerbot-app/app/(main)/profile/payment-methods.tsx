@@ -6,6 +6,7 @@ import {
   FlatList,
   Alert,
   ActivityIndicator,
+  StyleSheet,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +16,14 @@ import {
   initPaymentSheet,
   presentPaymentSheet,
 } from '@stripe/stripe-react-native';
+import {
+  ArrowLeft,
+  CreditCard,
+  Trash2,
+  Star,
+  AlertTriangle,
+  Plus,
+} from 'lucide-react-native';
 
 import {
   listPaymentMethods,
@@ -22,24 +31,28 @@ import {
   setDefaultPaymentMethod,
   createSetupIntent,
 } from '@/lib/api/payment-methods';
+import GlassCard from '@/components/ui/GlassCard';
+import GoldButton from '@/components/ui/GoldButton';
+import PremiumBadge from '@/components/ui/PremiumBadge';
+import { colors, typography, radius, spacing, shadows } from '@/lib/theme';
 import type { SavedPaymentMethod } from '@/types/api';
 
 // ─────────────────────────────────────────────────
-// Card Brand Icons (text-based for simplicity)
+// Card Brand Display
 // ─────────────────────────────────────────────────
 
-const BRAND_DISPLAY: Record<string, { icon: string; label: string }> = {
-  visa: { icon: '\uD83D\uDCB3', label: 'Visa' },
-  mastercard: { icon: '\uD83D\uDCB3', label: 'Mastercard' },
-  amex: { icon: '\uD83D\uDCB3', label: 'Amex' },
-  discover: { icon: '\uD83D\uDCB3', label: 'Discover' },
-  diners: { icon: '\uD83D\uDCB3', label: 'Diners' },
-  jcb: { icon: '\uD83D\uDCB3', label: 'JCB' },
-  unionpay: { icon: '\uD83D\uDCB3', label: 'UnionPay' },
-  unknown: { icon: '\uD83D\uDCB3', label: 'Card' },
+const BRAND_DISPLAY: Record<string, string> = {
+  visa: 'Visa',
+  mastercard: 'Mastercard',
+  amex: 'Amex',
+  discover: 'Discover',
+  diners: 'Diners',
+  jcb: 'JCB',
+  unionpay: 'UnionPay',
+  unknown: 'Card',
 };
 
-function getBrandDisplay(brand: string) {
+function getBrandLabel(brand: string): string {
   return BRAND_DISPLAY[brand.toLowerCase()] ?? BRAND_DISPLAY.unknown;
 }
 
@@ -60,65 +73,74 @@ function PaymentMethodCard({
   isDeleting: boolean;
   isSettingDefault: boolean;
 }) {
-  const brandInfo = getBrandDisplay(method.brand);
+  const brandLabel = getBrandLabel(method.brand);
   const expiry = `${String(method.exp_month).padStart(2, '0')}/${String(method.exp_year).slice(-2)}`;
 
   return (
-    <View
-      className={`mx-4 mb-3 rounded-2xl bg-dark-700 border ${
-        method.is_default ? 'border-brand' : 'border-dark-600'
-      } p-4`}
+    <GlassCard
+      goldAccent={method.is_default}
+      style={styles.paymentCard}
     >
-      <View className="flex-row items-center">
-        {/* Card icon and brand */}
-        <Text className="text-2xl mr-3">{brandInfo.icon}</Text>
-        <View className="flex-1">
-          <View className="flex-row items-center">
-            <Text className="text-white font-semibold text-base">
-              {brandInfo.label} {'\u2022\u2022\u2022\u2022'} {method.last4}
+      <View style={styles.cardRow}>
+        <View style={[styles.cardIconCircle, method.is_default && styles.cardIconCircleDefault]}>
+          <CreditCard
+            size={20}
+            color={method.is_default ? colors.gold[400] : colors.text.secondary}
+            strokeWidth={1.8}
+          />
+        </View>
+        <View style={styles.cardInfo}>
+          <View style={styles.cardTitleRow}>
+            <Text style={styles.cardTitle}>
+              {brandLabel} {'\u2022\u2022\u2022\u2022'} {method.last4}
             </Text>
             {method.is_default ? (
-              <View className="ml-2 bg-brand/20 rounded-full px-2 py-0.5">
-                <Text className="text-brand text-xs font-bold">Default</Text>
-              </View>
+              <PremiumBadge label="Default" variant="gold" small />
             ) : null}
           </View>
-          <Text className="text-white/40 text-sm mt-0.5">
-            Expires {expiry}
-          </Text>
+          <Text style={styles.cardExpiry}>Expires {expiry}</Text>
         </View>
       </View>
 
       {/* Actions */}
-      <View className="flex-row mt-3 pt-3 border-t border-dark-600 gap-3">
+      <View style={styles.cardActions}>
         {!method.is_default ? (
           <Pressable
             onPress={() => onSetDefault(method.id)}
             disabled={isSettingDefault}
-            className="flex-1 bg-dark-600 rounded-xl py-2.5 items-center active:opacity-80"
+            style={({ pressed }) => [styles.actionBtn, styles.actionBtnDefault, pressed && { opacity: 0.7 }]}
           >
             {isSettingDefault ? (
-              <ActivityIndicator color="#f59e0b" size="small" />
+              <ActivityIndicator color={colors.gold[500]} size="small" />
             ) : (
-              <Text className="text-white text-sm font-semibold">
-                Set as Default
-              </Text>
+              <>
+                <Star size={14} color={colors.gold[400]} strokeWidth={2} />
+                <Text style={styles.actionBtnDefaultText}>Set as Default</Text>
+              </>
             )}
           </Pressable>
         ) : null}
         <Pressable
           onPress={() => onDelete(method.id)}
           disabled={isDeleting}
-          className={`${method.is_default ? 'flex-1' : ''} bg-red-500/15 rounded-xl py-2.5 px-4 items-center active:opacity-80`}
+          style={({ pressed }) => [
+            styles.actionBtn,
+            styles.actionBtnDanger,
+            method.is_default && { flex: 1 },
+            pressed && { opacity: 0.7 },
+          ]}
         >
           {isDeleting ? (
-            <ActivityIndicator color="#ef4444" size="small" />
+            <ActivityIndicator color={colors.status.danger} size="small" />
           ) : (
-            <Text className="text-red-400 text-sm font-semibold">Remove</Text>
+            <>
+              <Trash2 size={14} color={colors.status.danger} strokeWidth={2} />
+              <Text style={styles.actionBtnDangerText}>Remove</Text>
+            </>
           )}
         </Pressable>
       </View>
-    </View>
+    </GlassCard>
   );
 }
 
@@ -233,7 +255,6 @@ export default function PaymentMethodsScreen() {
         throw presentError;
       }
 
-      // Card saved successfully — refresh the list
       await queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
     } catch {
       Alert.alert('Error', 'Failed to add payment method. Please try again.');
@@ -265,31 +286,32 @@ export default function PaymentMethodsScreen() {
   const keyExtractor = useCallback((item: SavedPaymentMethod) => item.id, []);
 
   return (
-    <View className="flex-1 bg-dark" style={{ paddingTop: insets.top }}>
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
       {/* Header */}
       <Animated.View
         entering={FadeIn.duration(400)}
-        className="flex-row items-center px-4 pt-4 pb-3"
+        style={styles.headerRow}
       >
         <Pressable
           onPress={() => router.back()}
-          className="mr-3 w-9 h-9 rounded-full bg-dark-700 items-center justify-center active:opacity-70"
+          style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.6 }]}
         >
-          <Text className="text-white text-lg">{'\u2039'}</Text>
+          <ArrowLeft size={20} color={colors.gold[400]} strokeWidth={2} />
         </Pressable>
-        <Text className="text-xl font-bold text-white flex-1">
-          Payment Methods
-        </Text>
+        <Text style={styles.headerTitle}>Payment Methods</Text>
+        <View style={{ width: 40 }} />
       </Animated.View>
 
       {isLoading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#f59e0b" size="large" />
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.gold[500]} size="large" />
         </View>
       ) : isError ? (
-        <View className="flex-1 items-center justify-center px-8">
-          <Text className="text-4xl mb-3">{'\u26A0\uFE0F'}</Text>
-          <Text className="text-white/60 text-center text-base">
+        <View style={styles.centered}>
+          <View style={styles.errorIconWrapper}>
+            <AlertTriangle size={28} color={colors.status.warning} strokeWidth={2} />
+          </View>
+          <Text style={styles.errorText}>
             Failed to load payment methods. Pull to refresh.
           </Text>
         </View>
@@ -309,10 +331,12 @@ export default function PaymentMethodsScreen() {
           ListEmptyComponent={
             <Animated.View
               entering={FadeIn.delay(100).duration(400)}
-              className="flex-1 items-center justify-center px-8"
+              style={styles.centered}
             >
-              <Text className="text-5xl mb-4">{'\uD83D\uDCB3'}</Text>
-              <Text className="text-white/50 text-center text-base leading-6">
+              <View style={styles.emptyIconWrapper}>
+                <CreditCard size={32} color={colors.gold[400]} strokeWidth={1.5} />
+              </View>
+              <Text style={styles.emptyText}>
                 No saved payment methods.{'\n'}Add one for faster checkout.
               </Text>
             </Animated.View>
@@ -320,26 +344,159 @@ export default function PaymentMethodsScreen() {
         />
       )}
 
-      {/* Add Card Button — fixed at bottom */}
+      {/* Add Card Button -- fixed at bottom */}
       <Animated.View
         entering={FadeInDown.delay(200).duration(350)}
-        className="absolute left-0 right-0 px-4 pb-2"
-        style={{ bottom: insets.bottom + 8 }}
+        style={[styles.bottomAction, { bottom: insets.bottom + 68 }]}
       >
-        <Pressable
+        <GoldButton
+          label="Add Payment Method"
           onPress={handleAddCard}
+          loading={isAddingCard}
           disabled={isAddingCard}
-          className="bg-brand rounded-2xl py-4 items-center active:opacity-90"
-        >
-          {isAddingCard ? (
-            <ActivityIndicator color="#1a1a2e" size="small" />
-          ) : (
-            <Text className="text-dark font-bold text-base">
-              + Add Payment Method
-            </Text>
-          )}
-        </Pressable>
+        />
       </Animated.View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.glass.surface,
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    ...typography.heading,
+    color: colors.text.primary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  paymentCard: {
+    marginHorizontal: spacing.screenPadding,
+    marginBottom: spacing.itemGap,
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.glass.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  cardIconCircleDefault: {
+    backgroundColor: 'rgba(200,162,77,0.12)',
+  },
+  cardInfo: {
+    flex: 1,
+  },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cardTitle: {
+    ...typography.bodyMedium,
+    color: colors.text.primary,
+  },
+  cardExpiry: {
+    ...typography.caption,
+    color: colors.text.tertiary,
+    marginTop: 2,
+    fontSize: 12,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.glass.border,
+    gap: 10,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  actionBtnDefault: {
+    backgroundColor: colors.glass.surfaceElevated,
+  },
+  actionBtnDefaultText: {
+    ...typography.buttonSmall,
+    color: colors.text.primary,
+  },
+  actionBtnDanger: {
+    backgroundColor: colors.status.dangerMuted,
+  },
+  actionBtnDangerText: {
+    ...typography.buttonSmall,
+    color: colors.status.danger,
+  },
+  errorIconWrapper: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.status.warningMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  errorText: {
+    ...typography.body,
+    color: colors.text.secondary,
+    textAlign: 'center',
+  },
+  emptyIconWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(200,162,77,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyText: {
+    ...typography.body,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  bottomAction: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    paddingHorizontal: spacing.screenPadding,
+    paddingBottom: 8,
+  },
+});

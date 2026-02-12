@@ -1,5 +1,9 @@
 import React from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { AlertTriangle } from 'lucide-react-native';
+import { BlurView } from 'expo-blur';
+import { colors, typography, radius, shadows, spacing } from '@/lib/theme';
+import GoldButton from '@/components/ui/GoldButton';
 
 interface Props {
   children: React.ReactNode;
@@ -31,51 +35,31 @@ export default class ErrorBoundary extends React.Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: '#1a1a2e',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 32,
-          }}
-        >
-          <Text style={{ fontSize: 48, marginBottom: 16 }}>{'\u26A0\uFE0F'}</Text>
-          <Text
-            style={{
-              color: '#ffffff',
-              fontSize: 22,
-              fontWeight: 'bold',
-              textAlign: 'center',
-              marginBottom: 8,
-            }}
-          >
-            Something went wrong
-          </Text>
-          <Text
-            style={{
-              color: 'rgba(255,255,255,0.5)',
-              fontSize: 14,
-              textAlign: 'center',
-              marginBottom: 24,
-              lineHeight: 20,
-            }}
-          >
-            The app encountered an unexpected error. Please try again.
-          </Text>
-          <Pressable
-            onPress={this.handleReset}
-            style={{
-              backgroundColor: '#f59e0b',
-              paddingHorizontal: 32,
-              paddingVertical: 14,
-              borderRadius: 16,
-            }}
-          >
-            <Text style={{ color: '#1a1a2e', fontSize: 16, fontWeight: 'bold' }}>
-              Try Again
-            </Text>
-          </Pressable>
+        <View style={styles.container}>
+          <View style={[styles.card, shadows.card]}>
+            <BlurView intensity={40} tint="dark" style={styles.blur}>
+              <View style={styles.glassOverlay} />
+              <View style={styles.content}>
+                <View style={styles.iconWrapper}>
+                  <AlertTriangle
+                    size={32}
+                    color={colors.status.warning}
+                    strokeWidth={2}
+                  />
+                </View>
+                <Text style={styles.title}>Something went wrong</Text>
+                <Text style={styles.description}>
+                  The app encountered an unexpected error. Please try again.
+                </Text>
+                <GoldButton
+                  label="Try Again"
+                  onPress={this.handleReset}
+                  fullWidth={false}
+                  style={{ paddingHorizontal: 40 }}
+                />
+              </View>
+            </BlurView>
+          </View>
         </View>
       );
     }
@@ -83,3 +67,56 @@ export default class ErrorBoundary extends React.Component<Props, State> {
     return this.props.children;
   }
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  card: {
+    borderRadius: radius['2xl'],
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    width: '100%',
+    maxWidth: 360,
+  },
+  blur: {
+    overflow: 'hidden',
+    borderRadius: radius['2xl'],
+  },
+  glassOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.glass.surface,
+  },
+  content: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.cardPadding,
+    paddingVertical: 40,
+  },
+  iconWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.status.warningMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  title: {
+    ...typography.title,
+    color: colors.text.primary,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  description: {
+    ...typography.body,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 28,
+    lineHeight: 22,
+  },
+});

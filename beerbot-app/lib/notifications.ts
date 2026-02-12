@@ -3,22 +3,26 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { supabase } from '@/lib/supabase';
 
-// Configure how notifications appear when app is foregrounded
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+// Configure how notifications appear when app is foregrounded (native only)
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 /**
  * Request notification permissions and return the Expo push token.
  * Returns null if permissions are denied or unavailable.
  */
 export async function registerForPushNotifications(): Promise<string | null> {
+  if (Platform.OS === 'web') return null;
+
   // Check existing permissions
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;

@@ -2,10 +2,11 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
+  Image,
   Pressable,
   ScrollView,
   Alert,
-  ActivityIndicator,
+  StyleSheet,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,16 +17,42 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  ArrowLeft,
+  Beer,
+  Hash,
+  Thermometer,
+  Minus,
+  Plus,
+  AlertTriangle,
+  Snowflake,
+  GlassWater,
+} from 'lucide-react-native';
 import { fetchVenueTaps, subscribeTaps } from '@/lib/api/venues';
+import { getBeerImageUrl } from '@/lib/utils/images';
+import { GlassCard, GoldButton, PremiumBadge, ShimmerLoader } from '@/components/ui';
+import {
+  colors,
+  typography,
+  radius,
+  spacing,
+  shadows,
+  springs,
+  goldGradientSubtle,
+} from '@/lib/theme';
 import type { Tap, TapWithBeer } from '@/types/api';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 const MIN_QUANTITY = 1;
 const MAX_QUANTITY = 6;
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 // ─────────────────────────────────────────────────
-// Availability Badge (reused pattern from beer list)
+// Availability Badge
 // ─────────────────────────────────────────────────
 
 function AvailabilityBadge({
@@ -35,25 +62,11 @@ function AvailabilityBadge({
 }) {
   switch (status) {
     case 'available':
-      return (
-        <View className="bg-green-500/20 rounded-full px-2.5 py-0.5">
-          <Text className="text-xs font-semibold text-green-400">
-            Available
-          </Text>
-        </View>
-      );
+      return <PremiumBadge label="Available" variant="success" />;
     case 'low':
-      return (
-        <View className="bg-yellow-500/20 rounded-full px-2.5 py-0.5">
-          <Text className="text-xs font-semibold text-yellow-400">Low</Text>
-        </View>
-      );
+      return <PremiumBadge label="Low" variant="warning" glow />;
     case 'out':
-      return (
-        <View className="bg-red-500/20 rounded-full px-2.5 py-0.5">
-          <Text className="text-xs font-semibold text-red-400/70">Sold Out</Text>
-        </View>
-      );
+      return <PremiumBadge label="Sold Out" variant="danger" />;
   }
 }
 
@@ -69,24 +82,27 @@ function TemperatureDisplay({
   tempOk: boolean;
 }) {
   if (temperatureF == null) {
-    return <Text className="text-xs text-white/30">Temp: N/A</Text>;
-  }
-
-  if (!tempOk) {
     return (
-      <View className="bg-blue-500/20 rounded-full px-2.5 py-0.5 flex-row items-center">
-        <Text className="text-xs mr-1">{'\u2744\uFE0F'}</Text>
-        <Text className="text-xs font-semibold text-blue-400">
-          Cooling down
+      <View style={styles.tempRow}>
+        <Thermometer size={12} color={colors.text.tertiary} />
+        <Text style={[typography.caption, { color: colors.text.tertiary, marginLeft: 4 }]}>
+          N/A
         </Text>
       </View>
     );
   }
 
+  if (!tempOk) {
+    return <PremiumBadge label="Cooling down" variant="info" />;
+  }
+
   return (
-    <Text className="text-xs text-white/50">
-      {Math.round(temperatureF)}{'\u00B0'}F
-    </Text>
+    <View style={styles.tempRow}>
+      <Thermometer size={12} color={colors.text.secondary} />
+      <Text style={[typography.caption, { color: colors.text.secondary, marginLeft: 4 }]}>
+        {Math.round(temperatureF)}{'\u00B0'}F
+      </Text>
+    </View>
   );
 }
 
@@ -104,9 +120,19 @@ function QuantityStepper({
   onIncrement: () => void;
 }) {
   const scale = useSharedValue(1);
+  const decrementScale = useSharedValue(1);
+  const incrementScale = useSharedValue(1);
 
   const animatedQuantityStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
+  }));
+
+  const decrementAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: decrementScale.value }],
+  }));
+
+  const incrementAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: incrementScale.value }],
   }));
 
   // Trigger a spring bounce whenever quantity changes
@@ -118,55 +144,66 @@ function QuantityStepper({
     scale.value = 1.15;
   }, [quantity, scale]);
 
+  const handleDecrement = () => {
+    decrementScale.value = withSpring(0.85, springs.snappy, () => {
+      decrementScale.value = withSpring(1, springs.button);
+    });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    onDecrement();
+  };
+
+  const handleIncrement = () => {
+    incrementScale.value = withSpring(0.85, springs.snappy, () => {
+      incrementScale.value = withSpring(1, springs.button);
+    });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    onIncrement();
+  };
+
   return (
-    <View className="flex-row items-center justify-center">
+    <View style={styles.stepperRow}>
       {/* Decrement button */}
-      <Pressable
-        onPress={onDecrement}
+      <AnimatedPressable
+        onPress={handleDecrement}
         disabled={quantity <= MIN_QUANTITY}
-        className={`w-12 h-12 rounded-full items-center justify-center ${
-          quantity <= MIN_QUANTITY
-            ? 'bg-dark-600/50'
-            : 'bg-dark-600 active:bg-dark-500'
-        }`}
+        style={[
+          decrementAnimStyle,
+          styles.stepperButton,
+          quantity <= MIN_QUANTITY && styles.stepperButtonDisabled,
+        ]}
         hitSlop={8}
       >
-        <Text
-          className={`text-2xl font-bold ${
-            quantity <= MIN_QUANTITY ? 'text-white/20' : 'text-white'
-          }`}
-        >
-          {'\u2212'}
-        </Text>
-      </Pressable>
+        <Minus
+          size={20}
+          color={quantity <= MIN_QUANTITY ? colors.text.tertiary : colors.gold[400]}
+          strokeWidth={2.5}
+        />
+      </AnimatedPressable>
 
       {/* Quantity display */}
-      <Animated.View
-        style={animatedQuantityStyle}
-        className="w-20 items-center"
-      >
-        <Text className="text-4xl font-bold text-white">{quantity}</Text>
+      <Animated.View style={[animatedQuantityStyle, styles.quantityContainer]}>
+        <Text style={[typography.display, { color: colors.text.primary }]}>
+          {quantity}
+        </Text>
       </Animated.View>
 
       {/* Increment button */}
-      <Pressable
-        onPress={onIncrement}
+      <AnimatedPressable
+        onPress={handleIncrement}
         disabled={quantity >= MAX_QUANTITY}
-        className={`w-12 h-12 rounded-full items-center justify-center ${
-          quantity >= MAX_QUANTITY
-            ? 'bg-dark-600/50'
-            : 'bg-dark-600 active:bg-dark-500'
-        }`}
+        style={[
+          incrementAnimStyle,
+          styles.stepperButton,
+          quantity >= MAX_QUANTITY && styles.stepperButtonDisabled,
+        ]}
         hitSlop={8}
       >
-        <Text
-          className={`text-2xl font-bold ${
-            quantity >= MAX_QUANTITY ? 'text-white/20' : 'text-white'
-          }`}
-        >
-          +
-        </Text>
-      </Pressable>
+        <Plus
+          size={20}
+          color={quantity >= MAX_QUANTITY ? colors.text.tertiary : colors.gold[400]}
+          strokeWidth={2.5}
+        />
+      </AnimatedPressable>
     </View>
   );
 }
@@ -296,38 +333,36 @@ export default function OrderConfigureScreen() {
 
   if (tapsQuery.isLoading) {
     return (
-      <View
-        className="flex-1 bg-dark items-center justify-center"
-        style={{ paddingTop: insets.top }}
-      >
-        <ActivityIndicator color="#f59e0b" size="large" />
-        <Text className="text-white/40 text-sm mt-4">Loading beer details...</Text>
+      <View style={[styles.screen, { paddingTop: insets.top }]}>
+        <ShimmerLoader type="beer" count={3} />
       </View>
     );
   }
 
   if (!tap || !beer) {
     return (
-      <View
-        className="flex-1 bg-dark items-center justify-center px-8"
-        style={{ paddingTop: insets.top }}
-      >
-        <Text className="text-3xl mb-3">{'\u26A0\uFE0F'}</Text>
-        <Text className="text-white/70 text-base text-center">
-          Beer not found or no longer available.
-        </Text>
-        <Pressable
-          onPress={() => router.back()}
-          className="mt-6 bg-dark-600 rounded-full px-6 py-3 active:opacity-70"
-        >
-          <Text className="text-brand font-semibold">Go back</Text>
-        </Pressable>
+      <View style={[styles.screenCenter, { paddingTop: insets.top }]}>
+        <Animated.View entering={FadeIn.duration(400)} style={styles.centered}>
+          <View style={styles.errorIconCircle}>
+            <AlertTriangle size={32} color={colors.status.warning} />
+          </View>
+          <Text style={[typography.body, { color: colors.text.secondary, textAlign: 'center', marginTop: 12 }]}>
+            Beer not found or no longer available.
+          </Text>
+          <GoldButton
+            label="Go back"
+            variant="secondary"
+            onPress={() => router.back()}
+            fullWidth={false}
+            style={{ marginTop: 24, paddingHorizontal: 32 }}
+          />
+        </Animated.View>
       </View>
     );
   }
 
   return (
-    <View className="flex-1 bg-dark" style={{ paddingTop: insets.top }}>
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScrollView
         contentContainerStyle={{
           paddingBottom: insets.bottom + 100,
@@ -337,38 +372,47 @@ export default function OrderConfigureScreen() {
         {/* Back button */}
         <Pressable
           onPress={() => router.back()}
-          className="px-6 pt-4 pb-2 self-start active:opacity-60"
+          style={styles.backButton}
           hitSlop={16}
         >
-          <Text className="text-brand text-base">{'\u2190'} Back</Text>
+          <View style={styles.backButtonCircle}>
+            <ArrowLeft size={20} color={colors.text.primary} />
+          </View>
         </Pressable>
 
-        {/* Beer image placeholder */}
-        <Animated.View
-          entering={FadeIn.duration(400)}
-          className="mx-6 mt-4 h-48 rounded-2xl bg-dark-700 items-center justify-center border border-dark-600 overflow-hidden"
-        >
-          {beer.image_url ? (
-            <Text className="text-white/30 text-sm">Image</Text>
-          ) : (
-            <View className="items-center">
-              <Text className="text-6xl">{'\uD83C\uDF7A'}</Text>
-              <Text className="text-white/20 text-xs mt-2">{beer.style}</Text>
+        {/* Beer hero image */}
+        <Animated.View entering={FadeIn.duration(400)}>
+          <View style={styles.imageCard}>
+            <Image
+              source={{ uri: getBeerImageUrl(beer.style, beer.image_url) }}
+              style={styles.beerHeroImage}
+              resizeMode="cover"
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(8,8,15,0.7)', 'rgba(8,8,15,0.95)']}
+              locations={[0.3, 0.7, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+            {/* Beer style badge floating on image */}
+            <View style={styles.imageOverlayBadge}>
+              <PremiumBadge label={beer.style} variant="gold" />
             </View>
-          )}
+          </View>
         </Animated.View>
 
         {/* Beer details */}
         <Animated.View
           entering={FadeInDown.delay(100).duration(350)}
-          className="mx-6 mt-6"
+          style={styles.section}
         >
-          <Text className="text-2xl font-bold text-white">{beer.name}</Text>
-          <Text className="text-base text-white/50 mt-1">
+          <Text style={[typography.title, { color: colors.text.primary }]}>
+            {beer.name}
+          </Text>
+          <Text style={[typography.caption, { color: colors.text.secondary, marginTop: 4 }]}>
             {beer.style} {'\u00B7'} {beer.abv}% ABV
           </Text>
           {beer.description ? (
-            <Text className="text-sm text-white/40 mt-3 leading-5">
+            <Text style={[typography.body, { color: colors.text.tertiary, marginTop: 12, fontSize: 14, lineHeight: 20 }]}>
               {beer.description}
             </Text>
           ) : null}
@@ -377,11 +421,12 @@ export default function OrderConfigureScreen() {
         {/* Tap number + live badges */}
         <Animated.View
           entering={FadeInDown.delay(200).duration(350)}
-          className="mx-6 mt-5 flex-row items-center gap-3"
+          style={[styles.section, styles.badgeRow]}
         >
-          <View className="bg-brand/15 rounded-full px-3 py-1">
-            <Text className="text-sm font-semibold text-brand">
-              Tap #{tap.tap_number}
+          <View style={styles.tapBadge}>
+            <Hash size={12} color={colors.gold[400]} />
+            <Text style={[typography.caption, { color: colors.gold[400], marginLeft: 2 }]}>
+              Tap {tap.tap_number}
             </Text>
           </View>
           <AvailabilityBadge status={tap.availability_status} />
@@ -392,20 +437,26 @@ export default function OrderConfigureScreen() {
         </Animated.View>
 
         {/* Serving size info */}
-        <Animated.View
-          entering={FadeInDown.delay(300).duration(350)}
-          className="mx-6 mt-6 bg-dark-700 rounded-2xl p-4 border border-dark-600"
-        >
-          <Text className="text-sm text-white/50">Serving Size</Text>
-          <Text className="text-lg font-semibold text-white mt-1">12 oz</Text>
+        <Animated.View entering={FadeInDown.delay(300).duration(350)}>
+          <GlassCard style={styles.sectionCard}>
+            <View style={styles.servingRow}>
+              <GlassWater size={18} color={colors.text.secondary} />
+              <Text style={[typography.caption, { color: colors.text.secondary, marginLeft: 8 }]}>
+                Serving Size
+              </Text>
+            </View>
+            <Text style={[typography.heading, { color: colors.text.primary, marginTop: 4 }]}>
+              12 oz
+            </Text>
+          </GlassCard>
         </Animated.View>
 
         {/* Quantity stepper */}
         <Animated.View
           entering={FadeInDown.delay(400).duration(350)}
-          className="mx-6 mt-6"
+          style={styles.section}
         >
-          <Text className="text-sm text-white/50 text-center mb-4">
+          <Text style={[typography.overline, { color: colors.text.secondary, textAlign: 'center', marginBottom: 16 }]}>
             Quantity
           </Text>
           <QuantityStepper
@@ -416,57 +467,192 @@ export default function OrderConfigureScreen() {
         </Animated.View>
 
         {/* Price breakdown */}
-        <Animated.View
-          entering={FadeInDown.delay(500).duration(350)}
-          className="mx-6 mt-8 bg-dark-700 rounded-2xl p-5 border border-dark-600"
-        >
-          <View className="flex-row justify-between items-center">
-            <Text className="text-sm text-white/50">Unit price</Text>
-            <Text className="text-sm text-white/70">
-              ${unitPrice.toFixed(2)}
-            </Text>
-          </View>
-          <View className="flex-row justify-between items-center mt-2">
-            <Text className="text-sm text-white/50">Quantity</Text>
-            <Text className="text-sm text-white/70">{'\u00D7'} {quantity}</Text>
-          </View>
-          <View className="h-px bg-dark-600 my-3" />
-          <View className="flex-row justify-between items-center">
-            <Text className="text-base font-bold text-white">Total</Text>
-            <Text className="text-xl font-bold text-brand">
-              ${totalPrice.toFixed(2)}
-            </Text>
-          </View>
+        <Animated.View entering={FadeInDown.delay(500).duration(350)}>
+          <GlassCard goldAccent style={styles.sectionCard}>
+            <View style={styles.priceRow}>
+              <Text style={[typography.label, { color: colors.text.secondary }]}>Unit price</Text>
+              <Text style={[typography.label, { color: colors.text.primary }]}>
+                ${unitPrice.toFixed(2)}
+              </Text>
+            </View>
+            <View style={[styles.priceRow, { marginTop: 8 }]}>
+              <Text style={[typography.label, { color: colors.text.secondary }]}>Quantity</Text>
+              <Text style={[typography.label, { color: colors.text.primary }]}>
+                {'\u00D7'} {quantity}
+              </Text>
+            </View>
+            <View style={styles.goldDivider} />
+            <View style={styles.priceRow}>
+              <Text style={[typography.bodyMedium, { color: colors.text.primary }]}>Total</Text>
+              <Text style={[typography.title, { color: colors.gold[400] }]}>
+                ${totalPrice.toFixed(2)}
+              </Text>
+            </View>
+          </GlassCard>
         </Animated.View>
       </ScrollView>
 
       {/* Fixed CTA button at bottom */}
       <Animated.View
         entering={FadeIn.delay(600).duration(400)}
-        className="absolute bottom-0 left-0 right-0 px-6 bg-dark border-t border-dark-600"
-        style={{ paddingBottom: insets.bottom + 12, paddingTop: 12 }}
+        style={[styles.ctaContainer, { paddingBottom: insets.bottom + 12 }]}
       >
         {tap.availability_status === 'low' && (
-          <View className="mb-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-2.5">
-            <Text className="text-sm text-yellow-400 text-center">
-              Limited stock {'\u2014'} order directly at the station
-            </Text>
-          </View>
+          <GlassCard style={styles.lowStockCard}>
+            <View style={styles.lowStockRow}>
+              <AlertTriangle size={16} color={colors.status.warning} />
+              <Text style={[typography.caption, { color: colors.status.warning, marginLeft: 8, flex: 1 }]}>
+                Limited stock {'\u2014'} order directly at the station
+              </Text>
+            </View>
+          </GlassCard>
         )}
-        <Pressable
+        <GoldButton
+          label="Continue"
+          suffix={`$${totalPrice.toFixed(2)}`}
           onPress={handleContinue}
           disabled={tap.availability_status !== 'available' || !tap.temp_ok}
-          className={`w-full items-center justify-center rounded-2xl py-4 ${
-            tap.availability_status === 'available' && tap.temp_ok
-              ? 'bg-brand active:opacity-80'
-              : 'bg-brand/40'
-          }`}
-        >
-          <Text className="text-lg font-bold text-dark">
-            Continue {'\u00B7'} ${totalPrice.toFixed(2)}
-          </Text>
-        </Pressable>
+        />
       </Animated.View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+  },
+  screenCenter: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.screenPadding,
+  },
+  centered: {
+    alignItems: 'center',
+  },
+  errorIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.status.warningMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backButton: {
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 16,
+    paddingBottom: 8,
+    alignSelf: 'flex-start',
+  },
+  backButtonCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.glass.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageCard: {
+    marginHorizontal: spacing.screenPadding,
+    marginTop: 8,
+    height: 220,
+    borderRadius: radius['2xl'],
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  beerHeroImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imageOverlayBadge: {
+    position: 'absolute',
+    bottom: 12,
+    left: 16,
+  },
+  section: {
+    marginHorizontal: spacing.screenPadding,
+    marginTop: spacing.sectionGap,
+  },
+  sectionCard: {
+    marginHorizontal: spacing.screenPadding,
+    marginTop: spacing.sectionGap,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 20,
+  },
+  tapBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(200,162,77,0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+  },
+  tempRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  servingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.glass.surfaceElevated,
+    borderWidth: 1.5,
+    borderColor: 'rgba(200,162,77,0.20)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperButtonDisabled: {
+    borderColor: colors.glass.border,
+    opacity: 0.5,
+  },
+  quantityContainer: {
+    width: 80,
+    alignItems: 'center',
+  },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  goldDivider: {
+    height: 1,
+    backgroundColor: 'rgba(200,162,77,0.15)',
+    marginVertical: 12,
+  },
+  ctaContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 12,
+    backgroundColor: colors.bg.primary,
+    borderTopWidth: 1,
+    borderTopColor: colors.glass.border,
+  },
+  lowStockCard: {
+    marginBottom: 12,
+  },
+  lowStockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+});

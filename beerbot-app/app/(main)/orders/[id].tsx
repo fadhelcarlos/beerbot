@@ -6,16 +6,47 @@ import {
   ScrollView,
   ActivityIndicator,
   Linking,
+  StyleSheet,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useQuery } from '@tanstack/react-query';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  ArrowLeft,
+  AlertTriangle,
+  QrCode,
+  RefreshCw,
+  FileText,
+  CreditCard,
+  Scan,
+  GlassWater,
+  PartyPopper,
+  Timer,
+  CircleDollarSign,
+  ExternalLink,
+  CircleDot,
+  CheckCircle2,
+  XCircle,
+  ChevronRight,
+} from 'lucide-react-native';
 import {
   getOrderWithDetails,
   getOrderEvents,
   checkTapAvailability,
 } from '@/lib/api/orders';
+import GlassCard from '@/components/ui/GlassCard';
+import GoldButton from '@/components/ui/GoldButton';
+import PremiumBadge from '@/components/ui/PremiumBadge';
+import {
+  colors,
+  typography,
+  radius,
+  spacing,
+  shadows,
+  goldGradientButton,
+} from '@/lib/theme';
 import type { OrderStatus, OrderEvent } from '@/types/api';
 
 // ─────────────────────────────────────────────────
@@ -24,12 +55,11 @@ import type { OrderStatus, OrderEvent } from '@/types/api';
 
 function getStatusConfig(status: OrderStatus): {
   label: string;
-  bgClass: string;
-  textClass: string;
+  variant: 'success' | 'warning' | 'danger' | 'info';
 } {
   switch (status) {
     case 'completed':
-      return { label: 'Completed', bgClass: 'bg-green-500/20', textClass: 'text-green-400' };
+      return { label: 'Completed', variant: 'success' };
     case 'paid':
     case 'ready_to_redeem':
     case 'redeemed':
@@ -45,18 +75,16 @@ function getStatusConfig(status: OrderStatus): {
               : status === 'redeemed'
                 ? 'Redeemed'
                 : 'Pouring',
-        bgClass: 'bg-yellow-500/20',
-        textClass: 'text-yellow-400',
+        variant: 'warning',
       };
     case 'expired':
     case 'cancelled':
       return {
         label: status === 'expired' ? 'Expired' : 'Cancelled',
-        bgClass: 'bg-red-500/20',
-        textClass: 'text-red-400',
+        variant: 'danger',
       };
     case 'refunded':
-      return { label: 'Refunded', bgClass: 'bg-blue-500/20', textClass: 'text-blue-400' };
+      return { label: 'Refunded', variant: 'info' };
   }
 }
 
@@ -92,18 +120,26 @@ function getEventDisplayName(eventType: string): string {
   return map[eventType] ?? eventType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function getEventIcon(eventType: string): string {
-  if (eventType === 'created') return '\uD83D\uDCDD';
-  if (eventType.includes('payment') && eventType.includes('succeeded')) return '\u2705';
-  if (eventType.includes('payment') && eventType.includes('failed')) return '\u274C';
-  if (eventType.includes('payment_intent_created')) return '\uD83D\uDCB3';
-  if (eventType.includes('qr')) return '\uD83D\uDCF1';
-  if (eventType === 'redeemed') return '\uD83D\uDD0D';
-  if (eventType === 'pouring') return '\uD83C\uDF7A';
-  if (eventType === 'completed') return '\uD83C\uDF89';
-  if (eventType === 'expired') return '\u23F0';
-  if (eventType.includes('refund')) return '\uD83D\uDCB0';
-  return '\u25CF';
+function getEventIcon(eventType: string) {
+  if (eventType === 'created') return FileText;
+  if (eventType.includes('payment') && eventType.includes('succeeded')) return CheckCircle2;
+  if (eventType.includes('payment') && eventType.includes('failed')) return XCircle;
+  if (eventType.includes('payment_intent_created')) return CreditCard;
+  if (eventType.includes('qr')) return QrCode;
+  if (eventType === 'redeemed') return Scan;
+  if (eventType === 'pouring') return GlassWater;
+  if (eventType === 'completed') return PartyPopper;
+  if (eventType === 'expired') return Timer;
+  if (eventType.includes('refund')) return CircleDollarSign;
+  return CircleDot;
+}
+
+function getEventIconColor(eventType: string): string {
+  if (eventType.includes('succeeded') || eventType === 'completed') return colors.status.success;
+  if (eventType.includes('failed') || eventType === 'refund_failed') return colors.status.danger;
+  if (eventType === 'expired') return colors.status.danger;
+  if (eventType.includes('refund')) return colors.status.info;
+  return colors.gold[400];
 }
 
 function formatEventTime(dateStr: string): string {
@@ -121,19 +157,16 @@ function formatEventTime(dateStr: string): string {
 // ─────────────────────────────────────────────────
 
 function getPaymentMethodDisplay(events: OrderEvent[]): string {
-  // Look for payment succeeded event metadata
   const paymentEvent = events.find(
     (e) => e.event_type === 'stripe_payment_intent.succeeded',
   );
   const metadata = paymentEvent?.metadata;
 
   if (metadata) {
-    // Check for wallet type in metadata
     const walletType = metadata.wallet_type as string | undefined;
     if (walletType === 'apple_pay') return 'Apple Pay';
     if (walletType === 'google_pay') return 'Google Pay';
 
-    // Check for last4 digits
     const last4 = metadata.last4 as string | undefined;
     if (last4) return `Card ending ${last4}`;
 
@@ -155,17 +188,21 @@ function getReceiptUrl(events: OrderEvent[]): string | null {
 // Sub-components
 // ─────────────────────────────────────────────────
 
-function InfoRow({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
+function InfoRow({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <View className="flex-row justify-between items-center py-2.5">
-      <Text className="text-sm text-white/50">{label}</Text>
-      <Text className={`text-sm font-medium ${valueClass ?? 'text-white/80'}`}>{value}</Text>
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={[styles.infoValue, accent && styles.infoValueAccent]}>{value}</Text>
     </View>
   );
 }
 
 function Divider() {
-  return <View className="h-px bg-dark-600" />;
+  return <View style={styles.divider} />;
+}
+
+function SectionTitle({ title }: { title: string }) {
+  return <Text style={styles.sectionTitle}>{title}</Text>;
 }
 
 function TimelineItem({
@@ -177,23 +214,28 @@ function TimelineItem({
   isLast: boolean;
   index: number;
 }) {
+  const IconComponent = getEventIcon(event.event_type);
+  const iconColor = getEventIconColor(event.event_type);
+
   return (
     <Animated.View
       entering={FadeInDown.delay(Math.min(index, 8) * 40).duration(300)}
-      className="flex-row"
+      style={styles.timelineRow}
     >
       {/* Timeline connector */}
-      <View className="items-center mr-3 w-8">
-        <Text className="text-lg">{getEventIcon(event.event_type)}</Text>
-        {!isLast && <View className="w-0.5 flex-1 bg-dark-600 mt-1" />}
+      <View style={styles.timelineIconCol}>
+        <View style={[styles.timelineIconCircle, { backgroundColor: `${iconColor}15` }]}>
+          <IconComponent size={14} color={iconColor} strokeWidth={2} />
+        </View>
+        {!isLast && <View style={styles.timelineConnector} />}
       </View>
 
       {/* Event content */}
-      <View className={`flex-1 ${isLast ? '' : 'pb-4'}`}>
-        <Text className="text-sm font-semibold text-white">
+      <View style={[styles.timelineContent, !isLast && { paddingBottom: 16 }]}>
+        <Text style={styles.timelineLabel}>
           {getEventDisplayName(event.event_type)}
         </Text>
-        <Text className="text-xs text-white/40 mt-0.5">
+        <Text style={styles.timelineTime}>
           {formatEventTime(event.created_at)}
         </Text>
       </View>
@@ -271,9 +313,9 @@ export default function OrderDetailScreen() {
 
   if (orderQuery.isLoading) {
     return (
-      <View className="flex-1 bg-dark items-center justify-center" style={{ paddingTop: insets.top }}>
-        <ActivityIndicator color="#f59e0b" size="large" />
-        <Text className="text-white/40 text-sm mt-4">Loading order...</Text>
+      <View style={[styles.screen, styles.centered, { paddingTop: insets.top }]}>
+        <ActivityIndicator color={colors.gold[500]} size="large" />
+        <Text style={[styles.loadingText, { marginTop: 16 }]}>Loading order...</Text>
       </View>
     );
   }
@@ -282,12 +324,18 @@ export default function OrderDetailScreen() {
 
   if (!order) {
     return (
-      <View className="flex-1 bg-dark items-center justify-center px-8" style={{ paddingTop: insets.top }}>
-        <Text className="text-3xl mb-3">{'\u26A0\uFE0F'}</Text>
-        <Text className="text-white/70 text-base text-center">Order not found.</Text>
-        <Pressable onPress={() => router.back()} className="mt-6 bg-dark-600 rounded-full px-6 py-3 active:opacity-70">
-          <Text className="text-brand font-semibold">Go back</Text>
-        </Pressable>
+      <View style={[styles.screen, styles.centered, { paddingTop: insets.top }]}>
+        <View style={styles.errorIconWrapper}>
+          <AlertTriangle size={28} color={colors.status.warning} strokeWidth={2} />
+        </View>
+        <Text style={styles.errorMainText}>Order not found.</Text>
+        <GoldButton
+          label="Go back"
+          onPress={() => router.back()}
+          variant="secondary"
+          fullWidth={false}
+          style={{ marginTop: 24, paddingHorizontal: 32 }}
+        />
       </View>
     );
   }
@@ -296,214 +344,362 @@ export default function OrderDetailScreen() {
   const isActive = isActiveOrder(order.status);
 
   return (
-    <View className="flex-1 bg-dark" style={{ paddingTop: insets.top }}>
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Back button */}
         <Pressable
           onPress={() => router.back()}
-          className="px-6 pt-4 pb-2 self-start active:opacity-60"
+          style={styles.backButton}
           hitSlop={16}
         >
-          <Text className="text-brand text-base">{'\u2190'} Orders</Text>
+          <ArrowLeft size={20} color={colors.gold[400]} strokeWidth={2} />
+          <Text style={styles.backText}>Orders</Text>
         </Pressable>
 
         {/* Header: Beer name + status */}
-        <Animated.View entering={FadeIn.duration(400)} className="px-6 mt-3">
-          <View className="flex-row items-start justify-between">
-            <View className="flex-1 mr-3">
-              <Text className="text-2xl font-bold text-white">{order.beer_name}</Text>
-              <Text className="text-sm text-white/50 mt-1">
-                {order.beer_style} {'\u00B7'} {order.beer_abv}% ABV
-              </Text>
-            </View>
-            <View className={`${statusConfig.bgClass} rounded-full px-3 py-1 mt-1`}>
-              <Text className={`text-sm font-semibold ${statusConfig.textClass}`}>
-                {statusConfig.label}
-              </Text>
-            </View>
+        <Animated.View entering={FadeIn.duration(400)} style={styles.detailHeader}>
+          <View style={styles.detailHeaderLeft}>
+            <Text style={styles.detailBeerName}>{order.beer_name}</Text>
+            <Text style={styles.detailBeerStyle}>
+              {order.beer_style} {'\u00B7'} {order.beer_abv}% ABV
+            </Text>
           </View>
+          <PremiumBadge label={statusConfig.label} variant={statusConfig.variant} />
         </Animated.View>
 
         {/* Active order CTA: show QR + go to redeem */}
         {isActive && (
-          <Animated.View entering={FadeInDown.delay(80).duration(350)} className="mx-6 mt-5">
+          <Animated.View entering={FadeInDown.delay(80).duration(350)} style={styles.sectionWrapper}>
             <Pressable
               onPress={handleGoToRedeem}
-              className="w-full items-center justify-center rounded-2xl py-4 bg-brand active:opacity-80"
+              style={({ pressed }) => pressed && { opacity: 0.85 }}
             >
-              <Text className="text-lg font-bold text-dark">
-                {'\uD83D\uDCF1'} Show QR Code
-              </Text>
-              <Text className="text-xs text-dark/70 mt-0.5">
-                Tap to view QR code and countdown
-              </Text>
+              <LinearGradient
+                colors={goldGradientButton.colors as unknown as [string, string, ...string[]]}
+                start={goldGradientButton.start}
+                end={goldGradientButton.end}
+                style={[styles.qrCta, shadows.glow]}
+              >
+                <QrCode size={24} color={colors.bg.primary} strokeWidth={2} />
+                <View style={{ marginLeft: 12 }}>
+                  <Text style={styles.qrCtaTitle}>Show QR Code</Text>
+                  <Text style={styles.qrCtaSubtitle}>
+                    Tap to view QR code and countdown
+                  </Text>
+                </View>
+              </LinearGradient>
             </Pressable>
           </Animated.View>
         )}
 
         {/* Order details card */}
-        <Animated.View
-          entering={FadeInDown.delay(120).duration(350)}
-          className="mx-6 mt-5 bg-dark-700 rounded-2xl p-5 border border-dark-600"
-        >
-          <Text className="text-xs font-semibold text-white/30 uppercase tracking-wider mb-1">
-            Order Details
-          </Text>
-
-          <InfoRow label="Venue" value={order.venue_name} />
-          <Divider />
-          <InfoRow label="Tap" value={`#${order.tap_number}`} />
-          <Divider />
-          <InfoRow label="Quantity" value={`${order.quantity} \u00D7 ${order.pour_size_oz}oz`} />
-          <Divider />
-          <InfoRow label="Unit Price" value={`$${order.unit_price.toFixed(2)}`} />
-          <Divider />
-          <InfoRow
-            label="Total"
-            value={`$${order.total_amount.toFixed(2)}`}
-            valueClass="text-brand font-bold"
-          />
+        <Animated.View entering={FadeInDown.delay(120).duration(350)} style={styles.sectionWrapper}>
+          <GlassCard>
+            <SectionTitle title="Order Details" />
+            <InfoRow label="Venue" value={order.venue_name} />
+            <Divider />
+            <InfoRow label="Tap" value={`#${order.tap_number}`} />
+            <Divider />
+            <InfoRow label="Quantity" value={`${order.quantity} \u00D7 ${order.pour_size_oz}oz`} />
+            <Divider />
+            <InfoRow label="Unit Price" value={`$${order.unit_price.toFixed(2)}`} />
+            <Divider />
+            <InfoRow
+              label="Total"
+              value={`$${order.total_amount.toFixed(2)}`}
+              accent
+            />
+          </GlassCard>
         </Animated.View>
 
         {/* Payment info card */}
         {order.paid_at && (
-          <Animated.View
-            entering={FadeInDown.delay(180).duration(350)}
-            className="mx-6 mt-3 bg-dark-700 rounded-2xl p-5 border border-dark-600"
-          >
-            <Text className="text-xs font-semibold text-white/30 uppercase tracking-wider mb-1">
-              Payment
-            </Text>
+          <Animated.View entering={FadeInDown.delay(180).duration(350)} style={styles.sectionWrapperSmall}>
+            <GlassCard>
+              <SectionTitle title="Payment" />
+              <InfoRow label="Method" value={paymentMethod} />
+              <Divider />
+              <InfoRow label="Paid" value={new Date(order.paid_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} />
 
-            <InfoRow label="Method" value={paymentMethod} />
-            <Divider />
-            <InfoRow label="Paid" value={new Date(order.paid_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} />
-
-            {receiptUrl && (
-              <>
-                <Divider />
-                <Pressable
-                  onPress={handleViewReceipt}
-                  className="flex-row justify-between items-center py-2.5 active:opacity-60"
-                >
-                  <Text className="text-sm text-white/50">Stripe Receipt</Text>
-                  <Text className="text-sm font-medium text-brand">
-                    View {'\u2197'}
-                  </Text>
-                </Pressable>
-              </>
-            )}
+              {receiptUrl && (
+                <>
+                  <Divider />
+                  <Pressable
+                    onPress={handleViewReceipt}
+                    style={({ pressed }) => [styles.infoRow, pressed && { opacity: 0.6 }]}
+                  >
+                    <Text style={styles.infoLabel}>Stripe Receipt</Text>
+                    <View style={styles.receiptLink}>
+                      <Text style={styles.receiptLinkText}>View</Text>
+                      <ExternalLink size={13} color={colors.gold[400]} strokeWidth={2} />
+                    </View>
+                  </Pressable>
+                </>
+              )}
+            </GlassCard>
           </Animated.View>
         )}
 
         {/* Order timeline */}
-        <Animated.View
-          entering={FadeInDown.delay(240).duration(350)}
-          className="mx-6 mt-5 bg-dark-700 rounded-2xl p-5 border border-dark-600"
-        >
-          <Text className="text-xs font-semibold text-white/30 uppercase tracking-wider mb-4">
-            Timeline
-          </Text>
+        <Animated.View entering={FadeInDown.delay(240).duration(350)} style={styles.sectionWrapper}>
+          <GlassCard>
+            <SectionTitle title="Timeline" />
 
-          {eventsQuery.isLoading ? (
-            <View className="items-center py-4">
-              <ActivityIndicator color="#f59e0b" size="small" />
-            </View>
-          ) : events.length === 0 ? (
-            <Text className="text-sm text-white/40 text-center py-3">
-              No timeline events yet
-            </Text>
-          ) : (
-            events.map((event, index) => (
-              <TimelineItem
-                key={event.id}
-                event={event}
-                isLast={index === events.length - 1}
-                index={index}
-              />
-            ))
-          )}
+            {eventsQuery.isLoading ? (
+              <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+                <ActivityIndicator color={colors.gold[500]} size="small" />
+              </View>
+            ) : events.length === 0 ? (
+              <Text style={styles.emptyTimeline}>
+                No timeline events yet
+              </Text>
+            ) : (
+              <View style={{ marginTop: 4 }}>
+                {events.map((event, index) => (
+                  <TimelineItem
+                    key={event.id}
+                    event={event}
+                    isLast={index === events.length - 1}
+                    index={index}
+                  />
+                ))}
+              </View>
+            )}
+          </GlassCard>
         </Animated.View>
 
         {/* Timestamps card */}
-        <Animated.View
-          entering={FadeInDown.delay(300).duration(350)}
-          className="mx-6 mt-3 bg-dark-700 rounded-2xl p-5 border border-dark-600"
-        >
-          <Text className="text-xs font-semibold text-white/30 uppercase tracking-wider mb-1">
-            Timestamps
-          </Text>
-
-          <InfoRow
-            label="Created"
-            value={new Date(order.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-          />
-          {order.paid_at && (
-            <>
-              <Divider />
-              <InfoRow
-                label="Paid"
-                value={new Date(order.paid_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-              />
-            </>
-          )}
-          {order.redeemed_at && (
-            <>
-              <Divider />
-              <InfoRow
-                label="Redeemed"
-                value={new Date(order.redeemed_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-              />
-            </>
-          )}
-          {order.completed_at && (
-            <>
-              <Divider />
-              <InfoRow
-                label="Completed"
-                value={new Date(order.completed_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-              />
-            </>
-          )}
-          {order.expires_at && (
-            <>
-              <Divider />
-              <InfoRow
-                label="Expires"
-                value={new Date(order.expires_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-              />
-            </>
-          )}
-
-          <Divider />
-          <InfoRow
-            label="Order ID"
-            value={order.id.slice(0, 8) + '...'}
-          />
+        <Animated.View entering={FadeInDown.delay(300).duration(350)} style={styles.sectionWrapperSmall}>
+          <GlassCard>
+            <SectionTitle title="Timestamps" />
+            <InfoRow
+              label="Created"
+              value={new Date(order.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+            />
+            {order.paid_at && (
+              <>
+                <Divider />
+                <InfoRow
+                  label="Paid"
+                  value={new Date(order.paid_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                />
+              </>
+            )}
+            {order.redeemed_at && (
+              <>
+                <Divider />
+                <InfoRow
+                  label="Redeemed"
+                  value={new Date(order.redeemed_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                />
+              </>
+            )}
+            {order.completed_at && (
+              <>
+                <Divider />
+                <InfoRow
+                  label="Completed"
+                  value={new Date(order.completed_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                />
+              </>
+            )}
+            {order.expires_at && (
+              <>
+                <Divider />
+                <InfoRow
+                  label="Expires"
+                  value={new Date(order.expires_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                />
+              </>
+            )}
+            <Divider />
+            <InfoRow
+              label="Order ID"
+              value={order.id.slice(0, 8) + '...'}
+            />
+          </GlassCard>
         </Animated.View>
 
         {/* Reorder button */}
         {!isActive && canReorder && (
-          <Animated.View entering={FadeInDown.delay(360).duration(350)} className="mx-6 mt-5">
-            <Pressable
+          <Animated.View entering={FadeInDown.delay(360).duration(350)} style={styles.sectionWrapper}>
+            <GoldButton
+              label="Reorder This Beer"
               onPress={handleReorder}
               disabled={reorderLoading}
-              className="w-full items-center justify-center rounded-2xl py-4 bg-brand active:opacity-80"
-            >
-              {reorderLoading ? (
-                <ActivityIndicator color="#1a1a2e" />
-              ) : (
-                <Text className="text-lg font-bold text-dark">
-                  {'\uD83D\uDD01'} Reorder This Beer
-                </Text>
-              )}
-            </Pressable>
+              loading={reorderLoading}
+            />
           </Animated.View>
         )}
       </ScrollView>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+  },
+  centered: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.screenPadding + 4,
+    paddingTop: 16,
+    paddingBottom: 8,
+    alignSelf: 'flex-start',
+    gap: 6,
+  },
+  backText: {
+    ...typography.label,
+    color: colors.gold[400],
+  },
+  detailHeader: {
+    paddingHorizontal: spacing.screenPadding + 4,
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  detailHeaderLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  detailBeerName: {
+    ...typography.title,
+    color: colors.text.primary,
+  },
+  detailBeerStyle: {
+    ...typography.caption,
+    color: colors.text.secondary,
+    marginTop: 4,
+  },
+  sectionWrapper: {
+    marginHorizontal: spacing.screenPadding,
+    marginTop: spacing.sectionGap,
+  },
+  sectionWrapperSmall: {
+    marginHorizontal: spacing.screenPadding,
+    marginTop: spacing.itemGap,
+  },
+  qrCta: {
+    borderRadius: radius['2xl'],
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  qrCtaTitle: {
+    ...typography.buttonLarge,
+    color: colors.bg.primary,
+  },
+  qrCtaSubtitle: {
+    ...typography.caption,
+    color: 'rgba(8,8,15,0.6)',
+    marginTop: 2,
+    fontSize: 12,
+  },
+  sectionTitle: {
+    ...typography.overline,
+    color: colors.text.tertiary,
+    marginBottom: 8,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  infoLabel: {
+    ...typography.caption,
+    color: colors.text.secondary,
+  },
+  infoValue: {
+    ...typography.label,
+    color: colors.text.primary,
+  },
+  infoValueAccent: {
+    color: colors.gold[400],
+    fontFamily: 'Inter_700Bold',
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.glass.border,
+  },
+  receiptLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  receiptLinkText: {
+    ...typography.label,
+    color: colors.gold[400],
+  },
+  timelineRow: {
+    flexDirection: 'row',
+  },
+  timelineIconCol: {
+    alignItems: 'center',
+    marginRight: 12,
+    width: 28,
+  },
+  timelineIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timelineConnector: {
+    width: 1.5,
+    flex: 1,
+    backgroundColor: colors.glass.border,
+    marginTop: 4,
+  },
+  timelineContent: {
+    flex: 1,
+    paddingTop: 4,
+  },
+  timelineLabel: {
+    ...typography.label,
+    color: colors.text.primary,
+  },
+  timelineTime: {
+    ...typography.caption,
+    color: colors.text.tertiary,
+    marginTop: 2,
+    fontSize: 12,
+  },
+  emptyTimeline: {
+    ...typography.caption,
+    color: colors.text.tertiary,
+    textAlign: 'center',
+    paddingVertical: 12,
+  },
+  loadingText: {
+    ...typography.caption,
+    color: colors.text.tertiary,
+  },
+  errorIconWrapper: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.status.warningMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  errorMainText: {
+    ...typography.body,
+    color: colors.text.secondary,
+    textAlign: 'center',
+  },
+});

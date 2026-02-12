@@ -32,7 +32,11 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "CAMERA"
+        "CAMERA",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
       ]
     },
     "web": {
@@ -67,15 +71,18 @@
           "merchantIdentifier": "merchant.com.beerbot.app",
           "enableGooglePay": true
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
+      "router": {},
       "eas": {
-        "projectId": "YOUR_EAS_PROJECT_ID"
+        "projectId": "7efac4be-f4ff-410a-8b8c-09dc55110533"
       }
     },
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "owner": "fadhelcarlos"
   }
 }

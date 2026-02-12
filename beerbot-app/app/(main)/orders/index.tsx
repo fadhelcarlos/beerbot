@@ -6,14 +6,19 @@ import {
   FlatList,
   RefreshControl,
   ActivityIndicator,
+  StyleSheet,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { Beer, ChevronRight, Clock, AlertTriangle } from 'lucide-react-native';
 import { getOrderHistoryWithDetails } from '@/lib/api/orders';
 import { formatErrorMessage } from '@/lib/utils/error-handler';
-import SkeletonLoader from '@/components/SkeletonLoader';
+import ShimmerLoader from '@/components/ui/ShimmerLoader';
+import GlassCard from '@/components/ui/GlassCard';
+import PremiumBadge from '@/components/ui/PremiumBadge';
+import { colors, typography, radius, spacing, shadows } from '@/lib/theme';
 import type { OrderWithDetails, OrderStatus } from '@/types/api';
 
 const PAGE_SIZE = 20;
@@ -24,16 +29,11 @@ const PAGE_SIZE = 20;
 
 function getStatusConfig(status: OrderStatus): {
   label: string;
-  bgClass: string;
-  textClass: string;
+  variant: 'success' | 'warning' | 'danger' | 'info';
 } {
   switch (status) {
     case 'completed':
-      return {
-        label: 'Completed',
-        bgClass: 'bg-green-500/20',
-        textClass: 'text-green-400',
-      };
+      return { label: 'Completed', variant: 'success' };
     case 'paid':
     case 'ready_to_redeem':
     case 'redeemed':
@@ -49,22 +49,16 @@ function getStatusConfig(status: OrderStatus): {
               : status === 'redeemed'
                 ? 'Redeemed'
                 : 'Pouring',
-        bgClass: 'bg-yellow-500/20',
-        textClass: 'text-yellow-400',
+        variant: 'warning',
       };
     case 'expired':
     case 'cancelled':
       return {
         label: status === 'expired' ? 'Expired' : 'Cancelled',
-        bgClass: 'bg-red-500/20',
-        textClass: 'text-red-400',
+        variant: 'danger',
       };
     case 'refunded':
-      return {
-        label: 'Refunded',
-        bgClass: 'bg-blue-500/20',
-        textClass: 'text-blue-400',
-      };
+      return { label: 'Refunded', variant: 'info' };
   }
 }
 
@@ -107,42 +101,41 @@ function OrderCard({
 
   return (
     <Animated.View entering={FadeInDown.delay(Math.min(index, 10) * 50).duration(350)}>
-      <Pressable
-        onPress={onPress}
-        className="mx-4 mb-3 rounded-2xl p-4 bg-dark-700 border border-dark-600 active:opacity-80"
-      >
-        <View className="flex-row items-start justify-between">
-          <View className="flex-1 mr-3">
-            <Text className="text-base font-bold text-white" numberOfLines={1}>
-              {order.beer_name}
-            </Text>
-            <Text className="text-sm text-white/50 mt-0.5" numberOfLines={1}>
-              {order.venue_name}
-            </Text>
+      <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.8 }}>
+        <GlassCard style={styles.orderCard}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardHeaderLeft}>
+              <Text style={styles.beerName} numberOfLines={1}>
+                {order.beer_name}
+              </Text>
+              <Text style={styles.venueName} numberOfLines={1}>
+                {order.venue_name}
+              </Text>
+            </View>
+            <PremiumBadge label={statusConfig.label} variant={statusConfig.variant} small />
           </View>
 
-          {/* Status badge */}
-          <View className={`${statusConfig.bgClass} rounded-full px-2.5 py-0.5`}>
-            <Text className={`text-xs font-semibold ${statusConfig.textClass}`}>
-              {statusConfig.label}
-            </Text>
+          <View style={styles.cardFooter}>
+            <View style={styles.dateRow}>
+              <Clock size={12} color={colors.text.tertiary} strokeWidth={2} />
+              <Text style={styles.dateText}>
+                {formatDate(order.created_at)}
+              </Text>
+            </View>
+            <View style={styles.priceRow}>
+              <Text style={styles.quantityText}>
+                {order.quantity} {'\u00D7'} 12oz
+              </Text>
+              <Text style={styles.totalText}>
+                ${order.total_amount.toFixed(2)}
+              </Text>
+            </View>
           </View>
-        </View>
 
-        {/* Date, quantity, total row */}
-        <View className="flex-row items-center justify-between mt-3">
-          <Text className="text-xs text-white/40">
-            {formatDate(order.created_at)}
-          </Text>
-          <View className="flex-row items-center gap-3">
-            <Text className="text-xs text-white/40">
-              {order.quantity} {'\u00D7'} 12oz
-            </Text>
-            <Text className="text-sm font-semibold text-brand">
-              ${order.total_amount.toFixed(2)}
-            </Text>
+          <View style={styles.chevronContainer}>
+            <ChevronRight size={16} color={colors.text.tertiary} strokeWidth={2} />
           </View>
-        </View>
+        </GlassCard>
       </Pressable>
     </Animated.View>
   );
@@ -213,28 +206,25 @@ export default function OrdersScreen() {
   const keyExtractor = useCallback((item: OrderWithDetails) => item.id, []);
 
   return (
-    <View
-      className="flex-1 bg-dark"
-      style={{ paddingTop: insets.top }}
-    >
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
       {/* Header */}
-      <Animated.View entering={FadeIn.duration(400)} className="px-4 pt-4 pb-2">
-        <Text className="text-2xl font-bold text-white">Orders</Text>
-        <Text className="text-sm text-white/50 mt-1">
-          Your purchase history
-        </Text>
+      <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
+        <Text style={styles.headerTitle}>Orders</Text>
+        <Text style={styles.headerSubtitle}>Your purchase history</Text>
       </Animated.View>
 
       {/* Content */}
       {isLoading ? (
-        <SkeletonLoader type="order" count={5} />
+        <ShimmerLoader type="order" count={5} />
       ) : isError ? (
-        <View className="flex-1 items-center justify-center px-8">
-          <Text className="text-3xl mb-3">{'\u26A0\uFE0F'}</Text>
-          <Text className="text-white/70 text-base text-center">
+        <View style={styles.centered}>
+          <View style={styles.errorIconWrapper}>
+            <AlertTriangle size={28} color={colors.status.warning} strokeWidth={2} />
+          </View>
+          <Text style={styles.errorText}>
             {formatErrorMessage(error)}
           </Text>
-          <Text className="text-white/40 text-sm text-center mt-2">
+          <Text style={styles.errorHint}>
             Pull down to try again
           </Text>
         </View>
@@ -245,15 +235,15 @@ export default function OrdersScreen() {
           keyExtractor={keyExtractor}
           contentContainerStyle={{
             paddingTop: 4,
-            paddingBottom: insets.bottom + 24,
+            paddingBottom: insets.bottom + 80,
             ...(orders.length === 0 && { flexGrow: 1 }),
           }}
           refreshControl={
             <RefreshControl
               refreshing={isFetching && !isLoading && !isFetchingNextPage}
               onRefresh={() => refetch()}
-              tintColor="#f59e0b"
-              colors={['#f59e0b']}
+              tintColor={colors.gold[500]}
+              colors={[colors.gold[500]]}
             />
           }
           onEndReached={handleLoadMore}
@@ -261,15 +251,17 @@ export default function OrdersScreen() {
           showsVerticalScrollIndicator={false}
           ListFooterComponent={
             isFetchingNextPage ? (
-              <View className="py-4 items-center">
-                <ActivityIndicator color="#f59e0b" size="small" />
+              <View style={styles.footerLoader}>
+                <ActivityIndicator color={colors.gold[500]} size="small" />
               </View>
             ) : null
           }
           ListEmptyComponent={
-            <View className="flex-1 items-center justify-center px-8">
-              <Text className="text-4xl mb-4">{'\uD83C\uDF7B'}</Text>
-              <Text className="text-white/70 text-base text-center">
+            <View style={styles.centered}>
+              <View style={styles.emptyIconWrapper}>
+                <Beer size={32} color={colors.gold[400]} strokeWidth={1.5} />
+              </View>
+              <Text style={styles.emptyText}>
                 Your order history will appear here after your first pour!
               </Text>
             </View>
@@ -279,3 +271,126 @@ export default function OrdersScreen() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+  },
+  header: {
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  headerTitle: {
+    ...typography.title,
+    color: colors.text.primary,
+  },
+  headerSubtitle: {
+    ...typography.caption,
+    color: colors.text.secondary,
+    marginTop: 4,
+  },
+  orderCard: {
+    marginHorizontal: spacing.screenPadding,
+    marginBottom: spacing.itemGap,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  cardHeaderLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  beerName: {
+    ...typography.bodyMedium,
+    color: colors.text.primary,
+  },
+  venueName: {
+    ...typography.caption,
+    color: colors.text.secondary,
+    marginTop: 2,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  dateText: {
+    ...typography.caption,
+    color: colors.text.tertiary,
+    fontSize: 12,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  quantityText: {
+    ...typography.caption,
+    color: colors.text.tertiary,
+    fontSize: 12,
+  },
+  totalText: {
+    ...typography.label,
+    color: colors.gold[400],
+  },
+  chevronContainer: {
+    position: 'absolute',
+    right: 20,
+    top: '50%',
+    marginTop: -8,
+  },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  errorIconWrapper: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.status.warningMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  errorText: {
+    ...typography.body,
+    color: colors.text.secondary,
+    textAlign: 'center',
+  },
+  errorHint: {
+    ...typography.caption,
+    color: colors.text.tertiary,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  emptyIconWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(200,162,77,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyText: {
+    ...typography.body,
+    color: colors.text.secondary,
+    textAlign: 'center',
+  },
+  footerLoader: {
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+});

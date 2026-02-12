@@ -76,21 +76,58 @@ function MenuRow({
   labelColor?: string;
   rightElement?: React.ReactNode;
 }) {
+  const ic = iconColor ?? colors.gold[400];
   return (
     <Pressable
       onPress={onPress}
       disabled={!onPress}
-      style={({ pressed }) => [styles.menuRow, pressed && onPress && { opacity: 0.7 }]}
+      style={({ pressed }) => ({
+        flexDirection: 'row' as const,
+        alignItems: 'center' as const,
+        paddingHorizontal: spacing.cardPadding,
+        paddingVertical: 14,
+        width: '100%' as const,
+        gap: 12,
+        opacity: pressed && onPress ? 0.7 : 1,
+      })}
     >
-      <View style={[styles.menuIconCircle, { backgroundColor: `${iconColor ?? colors.gold[400]}15` }]}>
-        <Icon size={18} color={iconColor ?? colors.gold[400]} strokeWidth={2} />
+      <View
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          backgroundColor: `${ic}15`,
+        }}
+      >
+        <Icon size={18} color={ic} strokeWidth={2} />
       </View>
-      <View style={styles.menuTextCol}>
-        <Text style={[styles.menuLabel, labelColor ? { color: labelColor, textDecorationLine: 'none' } : { textDecorationLine: 'none' }]}>
+      <View style={{ flex: 1, flexShrink: 1 }}>
+        <Text
+          style={{
+            fontSize: 16,
+            lineHeight: 24,
+            color: labelColor ?? colors.text.primary,
+            textDecorationLine: 'none',
+            fontWeight: '500',
+          }}
+        >
           {label}
         </Text>
         {subtitle ? (
-          <Text style={styles.menuSubtitle}>{subtitle}</Text>
+          <Text
+            style={{
+              fontSize: 12,
+              lineHeight: 18,
+              color: colors.text.tertiary,
+              marginTop: 2,
+              fontWeight: '500',
+            }}
+          >
+            {subtitle}
+          </Text>
         ) : null}
       </View>
       {rightElement}
@@ -605,35 +642,41 @@ const styles = StyleSheet.create({
   },
   // Menu row
   menuRow: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: spacing.cardPadding,
     paddingVertical: 14,
-    width: '100%' as const,
+    width: '100%',
+    gap: 12,
   },
   menuIconCircle: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
   },
   menuTextCol: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 0,
     flexShrink: 1,
   },
   menuLabel: {
-    ...typography.bodyMedium,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 16,
+    letterSpacing: 0.16,
+    lineHeight: 24,
     color: colors.text.primary,
-    textDecorationLine: 'none' as const,
+    textDecorationLine: 'none',
   },
   menuSubtitle: {
-    ...typography.caption,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    letterSpacing: 0.39,
+    lineHeight: 18,
     color: colors.text.tertiary,
     marginTop: 2,
-    fontSize: 12,
   },
   sectionDivider: {
     height: StyleSheet.hairlineWidth,

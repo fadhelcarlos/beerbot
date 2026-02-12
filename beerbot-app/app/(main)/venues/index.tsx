@@ -18,18 +18,21 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
-import { Beer, MapPin, Search, X, AlertTriangle } from 'lucide-react-native';
+import { MapPin, Search, X, AlertTriangle, ChevronRight } from 'lucide-react-native';
 import { fetchVenues, fetchVenueActiveTapCounts } from '@/lib/api/venues';
 import { formatErrorMessage } from '@/lib/utils/error-handler';
-import { GlassCard, PremiumBadge, ShimmerLoader } from '@/components/ui';
+import { getVenueImageUrl } from '@/lib/utils/images';
+import { PremiumBadge, ShimmerLoader } from '@/components/ui';
 import {
   colors,
   typography,
   radius,
   spacing,
+  shadows,
   springs,
 } from '@/lib/theme';
 import type { VenueWithDistance } from '@/types/api';
@@ -40,8 +43,8 @@ const NEARBY_THRESHOLD_MILES = 0.124; // ~200m
 
 function formatDistance(miles: number | null): string | null {
   if (miles == null) return null;
-  if (miles < 0.1) return `${Math.round(miles * 5280)} ft away`;
-  return `${miles.toFixed(1)} mi away`;
+  if (miles < 0.1) return `${Math.round(miles * 5280)} ft`;
+  return `${miles.toFixed(1)} mi`;
 }
 
 function isWithinRange(miles: number | null): boolean {
@@ -49,7 +52,7 @@ function isWithinRange(miles: number | null): boolean {
 }
 
 // -------------------------------------------------------------------
-// VenueCard
+// VenueCard — Modern card with hero image + gradient overlay
 // -------------------------------------------------------------------
 
 function VenueCard({
@@ -67,13 +70,14 @@ function VenueCard({
   const distanceLabel = formatDistance(venue.distance_miles);
   const disabled = !venue.mobile_ordering_enabled;
   const scale = useSharedValue(1);
+  const imageUrl = getVenueImageUrl(venue.id, venue.name, venue.image_url);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
   const handlePressIn = () => {
-    scale.value = withSpring(0.98, springs.card);
+    scale.value = withSpring(0.97, springs.card);
   };
 
   const handlePressOut = () => {
@@ -87,7 +91,10 @@ function VenueCard({
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(index * 70).springify().damping(20).stiffness(300)}
+      entering={FadeInDown.delay(index * 70)
+        .springify()
+        .damping(20)
+        .stiffness(300)}
     >
       <AnimatedPressable
         onPressIn={handlePressIn}
@@ -100,88 +107,124 @@ function VenueCard({
           disabled && styles.disabledCard,
         ]}
       >
-        <GlassCard
-          goldAccent={nearby}
-          style={styles.venueCard}
+        <View
+          style={[
+            styles.venueCard,
+            shadows.card,
+            nearby && styles.venueCardNearby,
+          ]}
         >
-          {/* Hero area */}
-          <View
-            style={[
-              styles.heroArea,
-              nearby && styles.heroAreaNearby,
-            ]}
-          >
-            {nearby ? (
-              <Beer size={32} color={colors.gold[500]} strokeWidth={1.5} />
-            ) : (
-              <Beer size={32} color={colors.text.tertiary} strokeWidth={1.5} />
-            )}
-          </View>
+          {/* Hero image with gradient overlay */}
+          <View style={styles.heroContainer}>
+            <Image
+              source={{ uri: imageUrl }}
+              style={styles.heroImage}
+              resizeMode="cover"
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(8,8,15,0.6)', 'rgba(8,8,15,0.95)']}
+              locations={[0, 0.5, 1]}
+              style={StyleSheet.absoluteFill}
+            />
 
-          {/* Venue info row */}
-          <View style={styles.venueInfoRow}>
-            <View style={styles.venueInfoText}>
+            {/* Badges floating on hero */}
+            <View style={styles.heroBadgeRow}>
+              {disabled ? (
+                <PremiumBadge label="In-person only" variant="neutral" small />
+              ) : nearby ? (
+                <PremiumBadge label="You're here!" variant="gold" glow />
+              ) : null}
+            </View>
+
+            {/* Venue name overlaid on bottom of hero */}
+            <View style={styles.heroContent}>
               <Text
                 style={[
                   typography.heading,
-                  { color: disabled ? colors.text.tertiary : colors.text.primary },
+                  {
+                    color: disabled
+                      ? colors.text.tertiary
+                      : colors.text.primary,
+                  },
                 ]}
                 numberOfLines={1}
               >
                 {venue.name}
               </Text>
+            </View>
+          </View>
+
+          {/* Bottom info strip */}
+          <View style={styles.infoStrip}>
+            <View style={styles.infoLeft}>
               <View style={styles.addressRow}>
                 <MapPin
                   size={12}
-                  color={disabled ? colors.text.tertiary : colors.text.secondary}
+                  color={
+                    disabled ? colors.text.tertiary : colors.text.secondary
+                  }
                   strokeWidth={2}
                 />
                 <Text
                   style={[
                     typography.caption,
                     styles.addressText,
-                    { color: disabled ? colors.text.tertiary : colors.text.secondary },
+                    {
+                      color: disabled
+                        ? colors.text.tertiary
+                        : colors.text.secondary,
+                    },
                   ]}
                   numberOfLines={1}
                 >
                   {venue.address}
                 </Text>
               </View>
+              <View style={styles.metaRow}>
+                <View style={styles.tapCountRow}>
+                  <View
+                    style={[
+                      styles.tapDot,
+                      {
+                        backgroundColor:
+                          tapCount > 0 ? colors.status.success : 'transparent',
+                        borderWidth: tapCount > 0 ? 0 : 1,
+                        borderColor: colors.glass.borderElevated,
+                      },
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      typography.caption,
+                      {
+                        color: disabled
+                          ? colors.text.tertiary
+                          : colors.text.secondary,
+                      },
+                    ]}
+                  >
+                    {tapCount} {tapCount === 1 ? 'tap' : 'taps'} on draft
+                  </Text>
+                </View>
+                {distanceLabel && !nearby && (
+                  <Text
+                    style={[
+                      typography.caption,
+                      { color: colors.text.tertiary },
+                    ]}
+                  >
+                    {distanceLabel}
+                  </Text>
+                )}
+              </View>
             </View>
-
-            {/* Distance badge */}
-            {disabled ? (
-              <PremiumBadge label="In-person only" variant="neutral" small />
-            ) : nearby ? (
-              <PremiumBadge label="You're here!" variant="gold" glow />
-            ) : distanceLabel ? (
-              <PremiumBadge label={distanceLabel} variant="neutral" />
-            ) : null}
-          </View>
-
-          {/* Tap count */}
-          <View style={styles.tapCountRow}>
-            <View
-              style={[
-                styles.tapDot,
-                {
-                  backgroundColor:
-                    tapCount > 0 ? colors.gold[500] : 'transparent',
-                  borderWidth: tapCount > 0 ? 0 : 1,
-                  borderColor: colors.glass.borderElevated,
-                },
-              ]}
+            <ChevronRight
+              size={18}
+              color={colors.text.tertiary}
+              strokeWidth={2}
             />
-            <Text
-              style={[
-                typography.caption,
-                { color: disabled ? colors.text.tertiary : colors.text.secondary },
-              ]}
-            >
-              {tapCount} active {tapCount === 1 ? 'tap' : 'taps'}
-            </Text>
           </View>
-        </GlassCard>
+        </View>
       </AnimatedPressable>
     </Animated.View>
   );
@@ -288,10 +331,7 @@ export default function VenuesScreen() {
       // Keep current state on error
     }
     setLocationChecked(true);
-    await Promise.all([
-      venuesQuery.refetch(),
-      tapCountsQuery.refetch(),
-    ]);
+    await Promise.all([venuesQuery.refetch(), tapCountsQuery.refetch()]);
   }, [venuesQuery, tapCountsQuery]);
 
   const isLoading =
@@ -330,22 +370,24 @@ export default function VenuesScreen() {
             style={styles.headerLogo}
             resizeMode="contain"
           />
-          <Text style={[typography.title, { color: colors.text.primary }]}>
-            Find a Venue
-          </Text>
+          <View>
+            <Text style={[typography.title, { color: colors.text.primary }]}>
+              Find a Venue
+            </Text>
+            <Text
+              style={[
+                typography.caption,
+                { color: colors.text.secondary, marginTop: 2 },
+              ]}
+            >
+              {locationDenied
+                ? 'Showing all venues'
+                : coords
+                  ? 'Sorted by distance'
+                  : 'Detecting your location...'}
+            </Text>
+          </View>
         </View>
-        <Text
-          style={[
-            typography.caption,
-            { color: colors.text.secondary, marginTop: 4 },
-          ]}
-        >
-          {locationDenied
-            ? 'Showing all venues alphabetically'
-            : coords
-              ? 'Sorted by distance from you'
-              : 'Detecting your location...'}
-        </Text>
       </Animated.View>
 
       {/* Search bar */}
@@ -354,11 +396,7 @@ export default function VenuesScreen() {
         style={styles.searchContainer}
       >
         <View style={styles.searchBar}>
-          <Search
-            size={18}
-            color={colors.text.tertiary}
-            strokeWidth={2}
-          />
+          <Search size={18} color={colors.text.tertiary} strokeWidth={2} />
           <TextInput
             style={[styles.searchInput, typography.body]}
             placeholder="Search venues..."
@@ -396,7 +434,11 @@ export default function VenuesScreen() {
           <Text
             style={[
               typography.body,
-              { color: colors.text.secondary, textAlign: 'center', marginTop: 12 },
+              {
+                color: colors.text.secondary,
+                textAlign: 'center',
+                marginTop: 12,
+              },
             ]}
           >
             {formatErrorMessage(venuesQuery.error)}
@@ -404,7 +446,11 @@ export default function VenuesScreen() {
           <Text
             style={[
               typography.caption,
-              { color: colors.text.tertiary, textAlign: 'center', marginTop: 8 },
+              {
+                color: colors.text.tertiary,
+                textAlign: 'center',
+                marginTop: 8,
+              },
             ]}
           >
             Pull down to try again
@@ -439,7 +485,11 @@ export default function VenuesScreen() {
               <Text
                 style={[
                   typography.body,
-                  { color: colors.text.secondary, textAlign: 'center', marginTop: 12 },
+                  {
+                    color: colors.text.secondary,
+                    textAlign: 'center',
+                    marginTop: 12,
+                  },
                 ]}
               >
                 No venues found
@@ -448,7 +498,11 @@ export default function VenuesScreen() {
                 <Text
                   style={[
                     typography.caption,
-                    { color: colors.text.tertiary, textAlign: 'center', marginTop: 8 },
+                    {
+                      color: colors.text.tertiary,
+                      textAlign: 'center',
+                      marginTop: 8,
+                    },
                   ]}
                 >
                   Try a different search term
@@ -479,11 +533,11 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
   },
   headerLogo: {
     width: 36,
     height: 36,
-    marginRight: 10,
   },
   searchContainer: {
     paddingHorizontal: spacing.screenPadding,
@@ -518,47 +572,70 @@ const styles = StyleSheet.create({
   },
   venueCard: {
     borderRadius: radius['2xl'],
+    backgroundColor: colors.glass.surface,
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    overflow: 'hidden',
   },
-  heroArea: {
+  venueCardNearby: {
+    borderColor: 'rgba(200,162,77,0.20)',
+    borderWidth: 1.5,
+  },
+  heroContainer: {
     width: '100%',
-    height: 112,
-    borderRadius: radius.lg,
-    backgroundColor: colors.bg.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
+    height: 160,
+    position: 'relative',
   },
-  heroAreaNearby: {
-    backgroundColor: 'rgba(200,162,77,0.08)',
+  heroImage: {
+    width: '100%',
+    height: '100%',
   },
-  venueInfoRow: {
+  heroBadgeRow: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
+    gap: 6,
   },
-  venueInfoText: {
+  heroContent: {
+    position: 'absolute',
+    bottom: 12,
+    left: 16,
+    right: 16,
+  },
+  infoStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  infoLeft: {
     flex: 1,
-    marginRight: 12,
+    marginRight: 8,
   },
   addressRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 4,
   },
   addressText: {
     flex: 1,
   },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
   tapCountRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 10,
   },
   tapDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
   },
   centeredContainer: {
     flex: 1,

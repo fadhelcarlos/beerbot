@@ -6,6 +6,7 @@ export interface Venue {
   longitude: number;
   is_active: boolean;
   mobile_ordering_enabled: boolean;
+  image_url?: string | null;
   created_at: string;
 }
 

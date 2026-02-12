@@ -2,16 +2,31 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
+  Image,
   Pressable,
   ScrollView,
-  ActivityIndicator,
   Alert,
+  StyleSheet,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import NetInfo from '@react-native-community/netinfo';
+import {
+  ArrowLeft,
+  CreditCard,
+  ShieldCheck,
+  AlertTriangle,
+  XCircle,
+  CheckCircle,
+} from 'lucide-react-native';
 import { fetchVenueTaps, subscribeTaps } from '@/lib/api/venues';
 import { createOrder, getOrder } from '@/lib/api/orders';
 import {
@@ -20,8 +35,20 @@ import {
 } from '@/lib/api/payments';
 import { supabase } from '@/lib/supabase';
 import { formatErrorMessage } from '@/lib/utils/error-handler';
+import { getBeerImageUrl } from '@/lib/utils/images';
+import { GlassCard, GoldButton, PremiumBadge, ShimmerLoader } from '@/components/ui';
+import {
+  colors,
+  typography,
+  radius,
+  spacing,
+  shadows,
+  springs,
+} from '@/lib/theme';
 import type { Order, Tap, TapWithBeer } from '@/types/api';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 type PaymentState =
   | 'loading'
@@ -31,6 +58,81 @@ type PaymentState =
   | 'failed'
   | 'checking_status'
   | 'error';
+
+// ─────────────────────────────────────────────────
+// Gold Loading State
+// ─────────────────────────────────────────────────
+
+function GoldLoadingState({ message, subtitle }: { message: string; subtitle?: string }) {
+  return (
+    <View style={loadingStyles.container}>
+      <View style={loadingStyles.iconCircle}>
+        <CreditCard size={28} color={colors.gold[400]} />
+      </View>
+      <ShimmerLoader type="beer" count={1} />
+      <Text style={[typography.heading, { color: colors.text.primary, textAlign: 'center', marginTop: 20 }]}>
+        {message}
+      </Text>
+      {subtitle && (
+        <Text style={[typography.caption, { color: colors.text.secondary, textAlign: 'center', marginTop: 8 }]}>
+          {subtitle}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+const loadingStyles = StyleSheet.create({
+  container: {
+    alignItems: 'center',
+  },
+  iconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(200,162,77,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(200,162,77,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    ...shadows.glowSubtle,
+  },
+});
+
+// ─────────────────────────────────────────────────
+// Animated Back Button
+// ─────────────────────────────────────────────────
+
+function AnimatedBackButton({ onPress }: { onPress: () => void }) {
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = () => {
+    scale.value = withSpring(0.9, springs.button);
+  };
+
+  const handlePressOut = () => {
+    scale.value = withSpring(1, springs.button);
+  };
+
+  return (
+    <AnimatedPressable
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      onPress={onPress}
+      style={[animatedStyle, styles.backButton]}
+      hitSlop={16}
+    >
+      <View style={styles.backButtonCircle}>
+        <ArrowLeft size={20} color={colors.text.primary} />
+      </View>
+    </AnimatedPressable>
+  );
+}
 
 // ─────────────────────────────────────────────────
 // Main Screen
@@ -305,8 +407,7 @@ export default function PaymentScreen() {
   }, []);
 
   // ─────────────────────────────────────────────────
-  // Network drop detection: if network drops mid-payment, show checking status
-  // and auto-start polling when reconnected
+  // Network drop detection
   // ─────────────────────────────────────────────────
 
   useEffect(() => {
@@ -358,8 +459,6 @@ export default function PaymentScreen() {
       }
 
       // Payment sheet completed — wait for webhook confirmation via realtime
-      // The realtime subscription will handle navigation to QR screen
-      // Set a fallback timeout in case realtime is slow
       payFallbackTimeoutRef.current = setTimeout(() => {
         if (!hasNavigated.current && paymentState !== 'success') {
           startStatusPolling();
@@ -399,14 +498,8 @@ export default function PaymentScreen() {
 
   if (paymentState === 'loading') {
     return (
-      <View
-        className="flex-1 bg-dark items-center justify-center"
-        style={{ paddingTop: insets.top }}
-      >
-        <ActivityIndicator color="#f59e0b" size="large" />
-        <Text className="text-white/40 text-sm mt-4">
-          Setting up payment...
-        </Text>
+      <View style={[styles.screen, styles.screenCentered, { paddingTop: insets.top }]}>
+        <GoldLoadingState message="Setting up payment..." />
       </View>
     );
   }
@@ -417,17 +510,11 @@ export default function PaymentScreen() {
 
   if (paymentState === 'processing') {
     return (
-      <View
-        className="flex-1 bg-dark items-center justify-center px-8"
-        style={{ paddingTop: insets.top }}
-      >
-        <ActivityIndicator color="#f59e0b" size="large" />
-        <Text className="text-white text-lg font-semibold mt-6 text-center">
-          Processing payment...
-        </Text>
-        <Text className="text-white/40 text-sm mt-2 text-center">
-          Please do not close the app
-        </Text>
+      <View style={[styles.screen, styles.screenCentered, { paddingTop: insets.top }]}>
+        <GoldLoadingState
+          message="Processing payment..."
+          subtitle="Please do not close the app"
+        />
       </View>
     );
   }
@@ -438,17 +525,11 @@ export default function PaymentScreen() {
 
   if (paymentState === 'checking_status') {
     return (
-      <View
-        className="flex-1 bg-dark items-center justify-center px-8"
-        style={{ paddingTop: insets.top }}
-      >
-        <ActivityIndicator color="#f59e0b" size="large" />
-        <Text className="text-white text-lg font-semibold mt-6 text-center">
-          Checking payment status...
-        </Text>
-        <Text className="text-white/40 text-sm mt-2 text-center">
-          This may take a moment
-        </Text>
+      <View style={[styles.screen, styles.screenCentered, { paddingTop: insets.top }]}>
+        <GoldLoadingState
+          message="Checking payment status..."
+          subtitle="This may take a moment"
+        />
       </View>
     );
   }
@@ -459,16 +540,16 @@ export default function PaymentScreen() {
 
   if (paymentState === 'success') {
     return (
-      <View
-        className="flex-1 bg-dark items-center justify-center px-8"
-        style={{ paddingTop: insets.top }}
-      >
-        <Animated.View entering={FadeIn.duration(400)} className="items-center">
-          <Text className="text-6xl">{'\uD83C\uDF89'}</Text>
-          <Text className="text-white text-xl font-bold mt-6 text-center">
+      <View style={[styles.screen, styles.screenCentered, { paddingTop: insets.top }]}>
+        <Animated.View entering={FadeIn.duration(400)} style={styles.centeredContent}>
+          <View style={styles.successIconCircle}>
+            <CheckCircle size={36} color={colors.gold[400]} />
+          </View>
+          <Text style={[typography.title, { color: colors.text.primary, textAlign: 'center', marginTop: 20 }]}>
             Payment Successful!
           </Text>
-          <Text className="text-white/40 text-sm mt-2 text-center">
+          <PremiumBadge label="CONFIRMED" variant="success" glow small />
+          <Text style={[typography.caption, { color: colors.text.secondary, textAlign: 'center', marginTop: 12 }]}>
             Getting your QR code ready...
           </Text>
         </Animated.View>
@@ -483,27 +564,24 @@ export default function PaymentScreen() {
   if (paymentState === 'error') {
     return (
       <View
-        className="flex-1 bg-dark"
-        style={{ paddingTop: insets.top, paddingBottom: insets.bottom + 16 }}
+        style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom + 16 }]}
       >
-        <View className="flex-1 items-center justify-center px-8">
-          <Animated.View entering={FadeIn.duration(400)} className="items-center">
-            <Text className="text-5xl">{'\u26A0\uFE0F'}</Text>
-            <Text className="text-white text-xl font-bold mt-6 text-center">
+        <View style={styles.errorContent}>
+          <Animated.View entering={FadeIn.duration(400)} style={styles.centeredContent}>
+            <View style={styles.errorIconCircle}>
+              <AlertTriangle size={36} color={colors.status.warning} />
+            </View>
+            <Text style={[typography.title, { color: colors.text.primary, textAlign: 'center', marginTop: 20 }]}>
               Something went wrong
             </Text>
-            <Text className="text-white/50 text-base mt-3 text-center leading-6">
+            <PremiumBadge label="ERROR" variant="warning" small />
+            <Text style={[typography.body, { color: colors.text.secondary, textAlign: 'center', marginTop: 12, lineHeight: 24 }]}>
               {errorMessage}
             </Text>
           </Animated.View>
         </View>
-        <View className="px-6">
-          <Pressable
-            onPress={() => router.back()}
-            className="w-full items-center justify-center rounded-2xl py-4 bg-dark-600 active:opacity-80"
-          >
-            <Text className="text-lg font-bold text-white">Go Back</Text>
-          </Pressable>
+        <View style={styles.ctaSection}>
+          <GoldButton label="Go Back" variant="ghost" onPress={() => router.back()} />
         </View>
       </View>
     );
@@ -516,33 +594,25 @@ export default function PaymentScreen() {
   if (paymentState === 'failed') {
     return (
       <View
-        className="flex-1 bg-dark"
-        style={{ paddingTop: insets.top, paddingBottom: insets.bottom + 16 }}
+        style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom + 16 }]}
       >
-        <View className="flex-1 items-center justify-center px-8">
-          <Animated.View entering={FadeIn.duration(400)} className="items-center">
-            <Text className="text-5xl">{'\u274C'}</Text>
-            <Text className="text-white text-xl font-bold mt-6 text-center">
+        <View style={styles.errorContent}>
+          <Animated.View entering={FadeIn.duration(400)} style={styles.centeredContent}>
+            <View style={styles.failedIconCircle}>
+              <XCircle size={36} color={colors.status.danger} />
+            </View>
+            <Text style={[typography.title, { color: colors.text.primary, textAlign: 'center', marginTop: 20 }]}>
               Payment Failed
             </Text>
-            <Text className="text-white/50 text-base mt-3 text-center leading-6">
+            <PremiumBadge label="DECLINED" variant="danger" small />
+            <Text style={[typography.body, { color: colors.text.secondary, textAlign: 'center', marginTop: 12, lineHeight: 24 }]}>
               {errorMessage || 'Payment declined'}
             </Text>
           </Animated.View>
         </View>
-        <View className="px-6 gap-3">
-          <Pressable
-            onPress={handleRetry}
-            className="w-full items-center justify-center rounded-2xl py-4 bg-brand active:opacity-80"
-          >
-            <Text className="text-lg font-bold text-dark">Try Again</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.back()}
-            className="w-full items-center justify-center rounded-2xl py-4 bg-dark-600 active:opacity-80"
-          >
-            <Text className="text-lg font-bold text-white">Cancel</Text>
-          </Pressable>
+        <View style={[styles.ctaSection, { gap: 12 }]}>
+          <GoldButton label="Try Again" onPress={handleRetry} />
+          <GoldButton label="Cancel" variant="ghost" onPress={() => router.back()} />
         </View>
       </View>
     );
@@ -555,13 +625,13 @@ export default function PaymentScreen() {
   const amount = serverAmount ?? Number(displayTotal);
 
   return (
-    <View className="flex-1 bg-dark" style={{ paddingTop: insets.top }}>
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScrollView
         contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Back button */}
-        <Pressable
+        {/* Back button with scale press animation */}
+        <AnimatedBackButton
           onPress={() => {
             Alert.alert(
               'Cancel Payment?',
@@ -576,121 +646,243 @@ export default function PaymentScreen() {
               ],
             );
           }}
-          className="px-6 pt-4 pb-2 self-start active:opacity-60"
-          hitSlop={16}
-        >
-          <Text className="text-brand text-base">{'\u2190'} Back</Text>
-        </Pressable>
+        />
 
         {/* Header */}
         <Animated.View
           entering={FadeInDown.delay(50).duration(350)}
-          className="mx-6 mt-4"
+          style={styles.section}
         >
-          <Text className="text-2xl font-bold text-white">
+          <Text style={[typography.title, { color: colors.text.primary }]}>
             Confirm & Pay
           </Text>
         </Animated.View>
 
         {/* Order Summary Card */}
-        <Animated.View
-          entering={FadeInDown.delay(150).duration(350)}
-          className="mx-6 mt-6 bg-dark-700 rounded-2xl p-5 border border-dark-600"
-        >
-          <Text className="text-sm font-semibold text-white/50 mb-4 uppercase tracking-wider">
-            Order Summary
-          </Text>
+        <Animated.View entering={FadeInDown.delay(150).duration(350)}>
+          <GlassCard goldAccent style={styles.sectionCard}>
+            <Text style={[typography.overline, { color: colors.text.secondary, marginBottom: 16 }]}>
+              Order Summary
+            </Text>
 
-          {/* Beer info */}
-          <View className="flex-row items-center mb-4">
-            <View className="w-12 h-12 rounded-xl bg-brand/15 items-center justify-center mr-3">
-              <Text className="text-2xl">{'\uD83C\uDF7A'}</Text>
-            </View>
-            <View className="flex-1">
-              <Text className="text-base font-semibold text-white">
-                {beer?.name ?? 'Beer'}
-              </Text>
-              <Text className="text-sm text-white/40 mt-0.5">
-                {beer?.style ?? ''} {beer?.abv ? `${'\u00B7'} ${beer.abv}% ABV` : ''}
-              </Text>
-            </View>
-          </View>
-
-          {/* Assigned tap */}
-          {tap && (
-            <View className="flex-row items-center mb-4">
-              <View className="bg-brand/15 rounded-full px-3 py-1">
-                <Text className="text-xs font-semibold text-brand">
-                  Tap #{tap.tap_number}
+            {/* Beer info */}
+            <View style={styles.beerInfoRow}>
+              <View style={styles.beerThumbnail}>
+                <Image
+                  source={{ uri: getBeerImageUrl(beer?.style, beer?.image_url) }}
+                  style={styles.beerThumbnailImage}
+                  resizeMode="cover"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[typography.bodyMedium, { color: colors.text.primary }]}>
+                  {beer?.name ?? 'Beer'}
+                </Text>
+                <Text style={[typography.caption, { color: colors.text.secondary, marginTop: 2 }]}>
+                  {beer?.style ?? ''} {beer?.abv ? `${'\u00B7'} ${beer.abv}% ABV` : ''}
                 </Text>
               </View>
             </View>
-          )}
 
-          {/* Price breakdown */}
-          <View className="border-t border-dark-600 pt-4 mt-1">
-            <View className="flex-row justify-between items-center">
-              <Text className="text-sm text-white/50">Unit price</Text>
-              <Text className="text-sm text-white/70">
+            {/* Assigned tap */}
+            {tap && (
+              <View style={styles.tapRow}>
+                <PremiumBadge label={`Tap #${tap.tap_number}`} variant="gold" />
+              </View>
+            )}
+
+            {/* Price breakdown */}
+            <View style={styles.goldDivider} />
+            <View style={styles.priceRow}>
+              <Text style={[typography.label, { color: colors.text.secondary }]}>Unit price</Text>
+              <Text style={[typography.label, { color: colors.text.primary }]}>
                 ${unitPrice.toFixed(2)}
               </Text>
             </View>
-            <View className="flex-row justify-between items-center mt-2">
-              <Text className="text-sm text-white/50">Quantity</Text>
-              <Text className="text-sm text-white/70">
+            <View style={[styles.priceRow, { marginTop: 8 }]}>
+              <Text style={[typography.label, { color: colors.text.secondary }]}>Quantity</Text>
+              <Text style={[typography.label, { color: colors.text.primary }]}>
                 {'\u00D7'} {qty}
               </Text>
             </View>
-            <View className="h-px bg-dark-600 my-3" />
-            <View className="flex-row justify-between items-center">
-              <Text className="text-base font-bold text-white">Total</Text>
-              <Text className="text-xl font-bold text-brand">
+            <View style={styles.goldDivider} />
+            <View style={styles.priceRow}>
+              <Text style={[typography.bodyMedium, { color: colors.text.primary }]}>Total</Text>
+              <Text style={[typography.title, { color: colors.gold[400] }]}>
                 ${amount.toFixed(2)}
               </Text>
             </View>
-          </View>
+          </GlassCard>
         </Animated.View>
 
         {/* Payment Methods Info */}
-        <Animated.View
-          entering={FadeInDown.delay(250).duration(350)}
-          className="mx-6 mt-6 bg-dark-700 rounded-2xl p-5 border border-dark-600"
-        >
-          <Text className="text-sm font-semibold text-white/50 mb-3 uppercase tracking-wider">
-            Payment Method
-          </Text>
-          <Text className="text-sm text-white/60 leading-5">
-            Apple Pay, Google Pay, and card payments are available. Tap the
-            button below to choose your preferred method.
-          </Text>
+        <Animated.View entering={FadeInDown.delay(250).duration(350)}>
+          <GlassCard style={styles.sectionCard}>
+            <View style={styles.paymentMethodHeader}>
+              <CreditCard size={18} color={colors.gold[400]} />
+              <Text style={[typography.overline, { color: colors.text.secondary, marginLeft: 8 }]}>
+                Payment Method
+              </Text>
+            </View>
+            <Text style={[typography.body, { color: colors.text.secondary, marginTop: 12, fontSize: 14, lineHeight: 22 }]}>
+              Apple Pay, Google Pay, and card payments are available. Tap the
+              button below to choose your preferred method.
+            </Text>
+          </GlassCard>
         </Animated.View>
 
         {/* Security notice */}
         <Animated.View
           entering={FadeInDown.delay(350).duration(350)}
-          className="mx-6 mt-4 px-2"
+          style={[styles.section, { marginTop: 16 }]}
         >
-          <Text className="text-xs text-white/30 text-center leading-5">
-            {'\uD83D\uDD12'} Payments are processed securely by Stripe
-          </Text>
+          <View style={styles.securityRow}>
+            <ShieldCheck size={14} color={colors.gold[500]} />
+            <Text style={[typography.caption, { color: colors.text.tertiary, marginLeft: 6, lineHeight: 18 }]}>
+              Payments are processed securely by Stripe
+            </Text>
+          </View>
         </Animated.View>
       </ScrollView>
 
       {/* Fixed CTA button at bottom */}
       <Animated.View
         entering={FadeIn.delay(400).duration(400)}
-        className="absolute bottom-0 left-0 right-0 px-6 bg-dark border-t border-dark-600"
-        style={{ paddingBottom: insets.bottom + 12, paddingTop: 12 }}
+        style={[styles.ctaContainer, { paddingBottom: insets.bottom + 12 }]}
       >
-        <Pressable
+        <GoldButton
+          label={`Pay $${amount.toFixed(2)}`}
           onPress={handlePay}
-          className="w-full items-center justify-center rounded-2xl py-4 bg-brand active:opacity-80"
-        >
-          <Text className="text-lg font-bold text-dark">
-            Pay ${amount.toFixed(2)}
-          </Text>
-        </Pressable>
+        />
       </Animated.View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+  },
+  screenCentered: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.screenPadding,
+  },
+  centeredContent: {
+    alignItems: 'center',
+  },
+  backButton: {
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 16,
+    paddingBottom: 8,
+    alignSelf: 'flex-start',
+  },
+  backButtonCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.glass.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  section: {
+    marginHorizontal: spacing.screenPadding,
+    marginTop: 16,
+  },
+  sectionCard: {
+    marginHorizontal: spacing.screenPadding,
+    marginTop: spacing.sectionGap,
+  },
+  beerInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  beerThumbnail: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    marginRight: 12,
+    backgroundColor: colors.glass.surface,
+  },
+  beerThumbnailImage: {
+    width: '100%',
+    height: '100%',
+  },
+  tapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  goldDivider: {
+    height: 1,
+    backgroundColor: 'rgba(200,162,77,0.15)',
+    marginVertical: 16,
+  },
+  paymentMethodHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  securityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctaContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 12,
+    backgroundColor: colors.bg.primary,
+    borderTopWidth: 1,
+    borderTopColor: colors.glass.border,
+  },
+  ctaSection: {
+    paddingHorizontal: spacing.screenPadding,
+  },
+  errorContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.screenPadding,
+  },
+  successIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(200,162,77,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    ...shadows.glow,
+  },
+  errorIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.status.warningMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  failedIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.status.dangerMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+});

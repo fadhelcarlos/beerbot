@@ -1,7 +1,7 @@
 {
   "name": "BeerBot Mobile App MVP V1.0",
-  "branchName": "ralph/beerbot-mobile-app",
   "description": "Complete customer-facing mobile app (iOS + Android) for BeerBot self-service beer dispensing system. Includes backend API with Stripe payments, age verification, GPS venue detection, QR-based order redemption, and real-time inventory awareness. Built with React Native + Expo, Supabase backend, and TypeScript.",
+  "branchName": "ralph/beerbot-mobile-app",
   "userStories": [
     {
       "id": "US-001",
@@ -23,9 +23,10 @@
         "npx tsc --noEmit passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "",
-      "dependsOn": []
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-002",
@@ -70,7 +71,9 @@
       "priority": 2,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-002"]
+      "dependsOn": [
+        "US-002"
+      ]
     },
     {
       "id": "US-004",
@@ -92,7 +95,9 @@
       "priority": 3,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-003"]
+      "dependsOn": [
+        "US-003"
+      ]
     },
     {
       "id": "US-005",
@@ -116,7 +121,9 @@
       "priority": 4,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-004"]
+      "dependsOn": [
+        "US-004"
+      ]
     },
     {
       "id": "US-006",
@@ -138,7 +145,9 @@
       "priority": 5,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-005"]
+      "dependsOn": [
+        "US-005"
+      ]
     },
     {
       "id": "US-007",
@@ -161,7 +170,9 @@
       "priority": 5,
       "passes": false,
       "notes": "Stripe secret key stored in Supabase Edge Function secrets",
-      "dependsOn": ["US-005"]
+      "dependsOn": [
+        "US-005"
+      ]
     },
     {
       "id": "US-008",
@@ -182,7 +193,10 @@
       "priority": 6,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-006", "US-007"]
+      "dependsOn": [
+        "US-006",
+        "US-007"
+      ]
     },
     {
       "id": "US-009",
@@ -204,7 +218,9 @@
       "priority": 3,
       "passes": false,
       "notes": "Veriff API keys stored in Supabase secrets. Can swap to Jumio if client prefers.",
-      "dependsOn": ["US-003"]
+      "dependsOn": [
+        "US-003"
+      ]
     },
     {
       "id": "US-010",
@@ -225,7 +241,9 @@
       "priority": 7,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-008"]
+      "dependsOn": [
+        "US-008"
+      ]
     },
     {
       "id": "US-011",
@@ -248,7 +266,9 @@
       "priority": 6,
       "passes": false,
       "notes": "These are stubs -- actual PLC communication flows through local Raspberry Pi backend in future phase",
-      "dependsOn": ["US-006"]
+      "dependsOn": [
+        "US-006"
+      ]
     },
     {
       "id": "US-012",
@@ -270,7 +290,9 @@
       "priority": 2,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-001"]
+      "dependsOn": [
+        "US-001"
+      ]
     },
     {
       "id": "US-013",
@@ -294,7 +316,10 @@
       "priority": 3,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-003", "US-012"]
+      "dependsOn": [
+        "US-003",
+        "US-012"
+      ]
     },
     {
       "id": "US-014",
@@ -319,7 +344,9 @@
       "priority": 4,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-013"]
+      "dependsOn": [
+        "US-013"
+      ]
     },
     {
       "id": "US-015",
@@ -341,7 +368,9 @@
       "priority": 5,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-014"]
+      "dependsOn": [
+        "US-014"
+      ]
     },
     {
       "id": "US-016",
@@ -368,7 +397,10 @@
       "priority": 5,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-004", "US-014"]
+      "dependsOn": [
+        "US-004",
+        "US-014"
+      ]
     },
     {
       "id": "US-017",
@@ -395,7 +427,9 @@
       "priority": 6,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-016"]
+      "dependsOn": [
+        "US-016"
+      ]
     },
     {
       "id": "US-018",
@@ -419,7 +453,9 @@
       "priority": 7,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-017"]
+      "dependsOn": [
+        "US-017"
+      ]
     },
     {
       "id": "US-019",
@@ -444,7 +480,10 @@
       "priority": 8,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-009", "US-018"]
+      "dependsOn": [
+        "US-009",
+        "US-018"
+      ]
     },
     {
       "id": "US-020",
@@ -473,7 +512,10 @@
       "priority": 9,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-007", "US-019"]
+      "dependsOn": [
+        "US-007",
+        "US-019"
+      ]
     },
     {
       "id": "US-021",
@@ -498,7 +540,10 @@
       "priority": 10,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-006", "US-020"]
+      "dependsOn": [
+        "US-006",
+        "US-020"
+      ]
     },
     {
       "id": "US-022",
@@ -521,7 +566,9 @@
       "priority": 11,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-021"]
+      "dependsOn": [
+        "US-021"
+      ]
     },
     {
       "id": "US-023",
@@ -544,7 +591,10 @@
       "priority": 6,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-005", "US-014"]
+      "dependsOn": [
+        "US-005",
+        "US-014"
+      ]
     },
     {
       "id": "US-024",
@@ -565,7 +615,9 @@
       "priority": 7,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-023"]
+      "dependsOn": [
+        "US-023"
+      ]
     },
     {
       "id": "US-025",
@@ -589,7 +641,9 @@
       "priority": 6,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-014"]
+      "dependsOn": [
+        "US-014"
+      ]
     },
     {
       "id": "US-026",
@@ -612,7 +666,10 @@
       "priority": 7,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-007", "US-025"]
+      "dependsOn": [
+        "US-007",
+        "US-025"
+      ]
     },
     {
       "id": "US-027",
@@ -632,7 +689,9 @@
       "priority": 8,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-017"]
+      "dependsOn": [
+        "US-017"
+      ]
     },
     {
       "id": "US-028",
@@ -656,7 +715,9 @@
       "priority": 8,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-014"]
+      "dependsOn": [
+        "US-014"
+      ]
     },
     {
       "id": "US-029",
@@ -679,7 +740,13 @@
       "priority": 11,
       "passes": false,
       "notes": "",
-      "dependsOn": ["US-010", "US-021"]
+      "dependsOn": [
+        "US-010",
+        "US-021"
+      ]
     }
-  ]
+  ],
+  "metadata": {
+    "updatedAt": "2026-02-12T00:35:49.690Z"
+  }
 }

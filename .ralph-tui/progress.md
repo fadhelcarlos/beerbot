@@ -12,6 +12,7 @@ after each iteration and it's included in prompts for context.
 - **Design tokens**: BeerBot palette in `tailwind.config.js` — `brand` (amber/gold #f59e0b), `dark` (navy #1a1a2e)
 - **State management**: Zustand stores in `lib/stores/`, TanStack Query client in `lib/query-client.ts`
 - **Types**: Shared API types in `types/api.ts`
+- **Database**: Supabase migrations in `supabase/migrations/`, seed data in `supabase/seed.sql`. Custom enums: `tap_status`, `order_status`. Auto-updated `updated_at` via trigger function.
 - **Deep link scheme**: `beerbot://` (configured in `app.json`)
 - **Path aliases**: `@/*` maps to project root via `tsconfig.json` `paths`
 
@@ -58,5 +59,32 @@ after each iteration and it's included in prompts for context.
   - `expo lint` auto-installs eslint + eslint-config-expo if not present; it scans `app/`, `src/`, `components/` dirs — directories with only non-TS files (e.g., `.gitkeep`) cause a lint error
   - Expo Router typed routes via `experiments.typedRoutes: true` in `app.json`
   - Expo SDK 54 uses React 19.1, react-native 0.81
+---
+
+## 2026-02-11 - US-002
+- What was implemented:
+  - Created `supabase/migrations/` and `supabase/` directory structure
+  - Single consolidated migration `20260211000000_initial_schema.sql` with all 8 tables:
+    - `users` — uuid PK, unique email, age verification fields, stripe_customer_id, updated_at trigger
+    - `venues` — uuid PK, name, address, lat/lng, is_active, mobile_ordering_enabled
+    - `beers` — uuid PK, name, style, abv, description, image_url
+    - `taps` — uuid PK, FK to venues/beers, tap_number, status enum, oz_remaining, temperature fields, updated_at trigger
+    - `tap_pricing` — uuid PK, FK to taps, price_12oz, pour_size_oz, currency
+    - `orders` — uuid PK, FKs to users/venues/taps/beers, quantity, pricing, status enum, QR fields, Stripe fields, timestamps, updated_at trigger
+    - `order_events` — uuid PK, FK to orders, event_type, jsonb metadata
+    - `admin_pour_logs` — uuid PK, FKs to taps/users, pour_size_oz, master_code_used, reason
+  - Custom PostgreSQL enums: `tap_status` (active/inactive/maintenance), `order_status` (9 states)
+  - Shared `update_updated_at()` trigger function for auto-updating timestamps
+  - 5 indexes: orders.user_id, orders.venue_id, orders.status, orders.qr_code_token, taps.venue_id
+  - Seed data in `supabase/seed.sql`: 1 venue (The Hoppy Spot), 3 beers (IPA, Stout, Wheat), 3 taps with pricing
+  - `npx tsc --noEmit` passes (SQL files don't affect TypeScript)
+- Files changed:
+  - `supabase/migrations/20260211000000_initial_schema.sql` — full schema migration (new)
+  - `supabase/seed.sql` — development seed data (new)
+- **Learnings:**
+  - SQL migrations are pure SQL files outside the TypeScript compilation scope, so they don't affect `tsc --noEmit`
+  - Using deterministic UUIDs in seed data (e.g., `00000000-0000-0000-0000-000000000001`) makes cross-referencing FKs in seed files easy and reproducible
+  - Supabase convention: migrations in `supabase/migrations/` with timestamp prefix, seed data in `supabase/seed.sql`
+  - The `types/api.ts` TypeScript types already match the database schema 1:1 (established in US-001)
 ---
 

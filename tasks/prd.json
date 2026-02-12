@@ -47,9 +47,10 @@
         "npx tsc --noEmit passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Run via Supabase CLI: supabase db push or supabase migration up",
-      "dependsOn": []
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-003",
@@ -747,6 +748,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-12T00:35:49.690Z"
+    "updatedAt": "2026-02-12T00:38:04.631Z"
   }
 }

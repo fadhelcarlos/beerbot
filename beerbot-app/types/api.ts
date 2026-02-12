@@ -175,3 +175,18 @@ export interface VerifyQrTokenResponse {
   error?: string;
   code?: string;
 }
+
+// ============================================================
+// Payments
+// ============================================================
+
+export interface CreatePaymentIntentRequest {
+  order_id: string;
+}
+
+export interface CreatePaymentIntentResponse {
+  client_secret: string;
+  ephemeral_key: string;
+  customer_id: string;
+  payment_intent_id: string;
+}

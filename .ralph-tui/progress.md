@@ -380,3 +380,50 @@ after each iteration and it's included in prompts for context.
   - `QR_TOKEN_SECRET` must be set as a Supabase secret (`supabase secrets set QR_TOKEN_SECRET=<value>`) — it's separate from the Supabase JWT secret
 ---
 
+## 2026-02-11 - US-007
+- What was implemented:
+  - Installed `@stripe/stripe-react-native` in the Expo project
+  - Created `supabase/functions/create-payment-intent/index.ts` (Deno Edge Function):
+    - Authenticates user via JWT from Authorization header
+    - Validates order exists, belongs to requesting user, and has status `pending_payment`
+    - Creates or retrieves Stripe Customer for the user (links `stripe_customer_id` to users table)
+    - Creates Stripe PaymentIntent with amount from `order.total_amount` (converted to cents)
+    - PaymentIntent metadata includes: `order_id`, `user_id`, `venue_id`, `tap_id`
+    - Uses idempotency key (`order_{order_id}`) to prevent duplicate charges
+    - Idempotent: if `stripe_payment_intent_id` already exists on order, retrieves existing intent
+    - Stores `stripe_payment_intent_id` on the order record
+    - Logs `payment_intent_created` event to `order_events`
+    - Creates ephemeral key for mobile SDK payment sheet
+    - Returns `client_secret`, `ephemeral_key`, `customer_id`, `payment_intent_id`
+    - CORS headers for preflight OPTIONS requests
+  - Created `lib/api/payments.ts` with typed functions:
+    - `createPaymentIntent(request)` — invokes Edge Function, returns `CreatePaymentIntentResponse`
+    - `initializePaymentSheet(orderId)` — creates PaymentIntent + configures native Stripe payment sheet with Apple Pay, Google Pay, and card support
+    - `presentPayment()` — presents payment sheet, returns `true` on success, `false` on cancel
+    - `getStripePublishableKey()` — returns publishable key for StripeProvider initialization
+  - Updated `types/api.ts`:
+    - Added `CreatePaymentIntentRequest` interface (`order_id`)
+    - Added `CreatePaymentIntentResponse` interface (`client_secret`, `ephemeral_key`, `customer_id`, `payment_intent_id`)
+  - Configured `@stripe/stripe-react-native` Expo plugin in `app.json` with `merchantIdentifier` and `enableGooglePay`
+  - Added `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` to `.env.example`
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `supabase/functions/create-payment-intent/index.ts` — Stripe PaymentIntent Edge Function (new)
+  - `lib/api/payments.ts` — typed payment API functions (new)
+  - `types/api.ts` — added payment request/response types
+  - `app.json` — added @stripe/stripe-react-native plugin
+  - `.env.example` — added Stripe publishable key env var
+  - `package.json` — added `@stripe/stripe-react-native` dependency
+- **Learnings:**
+  - Stripe on Deno uses `https://esm.sh/stripe@14?target=deno` — the `?target=deno` query param is essential for Deno-compatible ESM build
+  - `Stripe.createFetchHttpClient()` is needed in Deno since Node's `http` module isn't available — pass it as `httpClient` in the Stripe constructor options
+  - Stripe amounts are in smallest currency unit (cents for USD) — multiply `total_amount` by 100 and round to avoid floating-point issues
+  - Idempotency is achieved at two levels: (1) Stripe's `idempotencyKey` on `paymentIntents.create` prevents duplicate charges server-side, (2) checking for existing `stripe_payment_intent_id` on the order prevents redundant API calls
+  - `@stripe/stripe-react-native` Expo plugin requires `merchantIdentifier` for Apple Pay (format: `merchant.com.domain.app`) and `enableGooglePay: true` for Android
+  - `initPaymentSheet` + `presentPaymentSheet` is the recommended Stripe mobile SDK flow — it handles Apple Pay, Google Pay, and card entry in a single native UI
+  - Ephemeral keys are short-lived Stripe API keys scoped to a single customer — needed by the mobile SDK to securely access customer data without exposing the secret key
+  - `STRIPE_SECRET_KEY` must be set as a Supabase Edge Function secret (`supabase secrets set STRIPE_SECRET_KEY=sk_...`) — never exposed to the client
+  - The `returnURL` in `initPaymentSheet` (`beerbot://payment-complete`) uses the existing deep link scheme for redirect-based payment methods (3D Secure, etc.)
+---
+

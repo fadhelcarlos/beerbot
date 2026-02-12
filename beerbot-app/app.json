@@ -60,6 +60,13 @@
         {
           "faceIDPermission": "BeerBot uses Face ID for quick and secure login."
         }
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.beerbot.app",
+          "enableGooglePay": true
+        }
       ]
     ],
     "experiments": {

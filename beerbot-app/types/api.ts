@@ -100,6 +100,25 @@ export interface VerificationStatus {
 // Orders
 // ============================================================
 
+export interface CreateOrderRequest {
+  tap_id: string;
+  quantity?: number;
+}
+
+export interface CreateOrderResponse {
+  order_id: string;
+  venue_id: string;
+  tap_id: string;
+  beer_id: string;
+  quantity: number;
+  pour_size_oz: number;
+  unit_price: number;
+  total_amount: number;
+  currency: string;
+  status: OrderStatus;
+  expires_at: string;
+}
+
 export interface Order {
   id: string;
   user_id: string;
@@ -121,4 +140,12 @@ export interface Order {
   expires_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface OrderEvent {
+  id: string;
+  order_id: string;
+  event_type: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
 }

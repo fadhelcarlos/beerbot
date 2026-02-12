@@ -256,3 +256,41 @@ after each iteration and it's included in prompts for context.
   - `keyboardShouldPersistTaps="handled"` on ScrollView prevents keyboard dismissal when tapping buttons — essential for form UX
 ---
 
+## 2026-02-11 - US-005
+- What was implemented:
+  - Created `supabase/migrations/20260211400000_create_order_rpc.sql`:
+    - `create_order_atomic(p_user_id, p_tap_id, p_quantity, p_expires_minutes)` SQL function (SECURITY DEFINER)
+    - Atomic transaction: validates all preconditions → decrements `oz_remaining` → creates order → logs `created` event in `order_events`
+    - Validations: user `age_verified = true`, tap `status = 'active'`, tap `temp_ok = true`, venue `is_active = true`, venue `mobile_ordering_enabled = true`, `oz_remaining > low_threshold_oz`, sufficient inventory for requested quantity
+    - Uses `FOR UPDATE` row lock on taps to prevent concurrent inventory race conditions
+    - Sets order status to `pending_payment`, calculates `total_amount` from `tap_pricing`, sets `expires_at` to now + 15 minutes (configurable via parameter)
+    - Returns structured JSON with error codes on validation failure, or order details on success
+  - Created `supabase/functions/create-order/index.ts` (Deno Edge Function):
+    - Authenticates user via JWT from Authorization header (same pattern as create-verification-session)
+    - Validates request body (`tap_id` required, `quantity` optional positive integer)
+    - Calls `create_order_atomic` RPC via service_role client (bypasses RLS for cross-table atomic transaction)
+    - Maps error codes to appropriate HTTP status codes (403, 404, 409)
+    - CORS headers for preflight OPTIONS requests
+  - Created `lib/api/orders.ts` with typed functions:
+    - `createOrder(request)` — invokes create-order Edge Function, returns `CreateOrderResponse`
+    - `getOrder(orderId)` — fetches single order by ID via Supabase client (RLS-filtered)
+    - `getOrderHistory({ limit, offset })` — paginated order history, newest first, default 20 per page
+  - Updated `types/api.ts`:
+    - Added `CreateOrderRequest` interface (`tap_id`, optional `quantity`)
+    - Added `CreateOrderResponse` interface (order details returned from Edge Function)
+    - Added `OrderEvent` interface (order_events table row type)
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `supabase/migrations/20260211400000_create_order_rpc.sql` — atomic order creation RPC (new)
+  - `supabase/functions/create-order/index.ts` — order creation Edge Function (new)
+  - `lib/api/orders.ts` — typed order API functions (new)
+  - `types/api.ts` — added `CreateOrderRequest`, `CreateOrderResponse`, `OrderEvent`
+- **Learnings:**
+  - `FOR UPDATE` row-level lock in PostgreSQL is essential for atomic inventory operations — prevents concurrent orders from overselling
+  - SECURITY DEFINER on the RPC function means it runs with the function owner's permissions (typically superuser), allowing cross-table reads/writes regardless of RLS. The Edge Function calls it via service_role client.
+  - Returning `jsonb` from a PL/pgSQL function allows structured error reporting without raising exceptions — the caller checks for an `error` key in the result
+  - Supabase `.rpc()` with service_role client bypasses RLS entirely, so the atomic function can read users, venues, taps, tap_pricing, and write orders + order_events in a single transaction
+  - `(p_expires_minutes || ' minutes')::interval` is valid PostgreSQL syntax for constructing an interval from a parameter
+---
+

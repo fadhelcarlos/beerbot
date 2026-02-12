@@ -1,14 +1,23 @@
 import '../global.css';
 
 import { useEffect, useCallback, useRef } from 'react';
-import { View, Alert } from 'react-native';
+import { Platform, View, Alert, ActivityIndicator } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
+import * as SplashScreen from 'expo-splash-screen';
 import NetInfo from '@react-native-community/netinfo';
+import {
+  useFonts,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+} from '@expo-google-fonts/inter';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { getStripePublishableKey, isStripeMockMode } from '@/lib/api/payments';
 import { queryClient } from '@/lib/query-client';
@@ -20,6 +29,9 @@ import {
 } from '@/lib/notifications';
 import OfflineBanner from '@/components/OfflineBanner';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { colors } from '@/lib/theme';
+
+SplashScreen.preventAutoHideAsync();
 
 // Sync TanStack Query online status with NetInfo
 onlineManager.setEventListener((setOnline) => {
@@ -109,8 +121,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     return () => subscription.remove();
   }, [handleDeepLink]);
 
-  // Register for push notifications when authenticated
+  // Register for push notifications when authenticated (native only)
   useEffect(() => {
+    if (Platform.OS === 'web') return;
     if (!isAuthenticated || isLoading) return;
 
     registerForPushNotifications().then((token) => {
@@ -120,8 +133,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     });
   }, [isAuthenticated, isLoading]);
 
-  // Handle notification taps — navigate to the order's redeem screen
+  // Handle notification taps — navigate to the order's redeem screen (native only)
   useEffect(() => {
+    if (Platform.OS === 'web') return;
+
     const subscription = Notifications.addNotificationResponseReceivedListener(
       (response) => {
         const data = response.notification.request.content.data;
@@ -136,8 +151,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     return () => subscription.remove();
   }, [router]);
 
-  // Check if app was opened from a notification (cold start)
+  // Check if app was opened from a notification (cold start, native only)
   useEffect(() => {
+    if (Platform.OS === 'web') return;
+
     Notifications.getLastNotificationResponseAsync().then((response) => {
       if (response) {
         const data = response.notification.request.content.data;
@@ -185,21 +202,44 @@ function MaybeStripeProvider({ children }: { children: React.ReactElement }) {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg.primary, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={colors.gold[500]} size="large" />
+      </View>
+    );
+  }
+
   return (
-    <ErrorBoundary>
-      <MaybeStripeProvider>
-        <QueryClientProvider client={queryClient}>
-          <StatusBar style="light" />
-          <View style={{ flex: 1 }} className="bg-dark">
-            <OfflineBanner />
-            <View style={{ flex: 1 }}>
-              <AuthGate>
-                <Stack screenOptions={{ headerShown: false }} />
-              </AuthGate>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ErrorBoundary>
+        <MaybeStripeProvider>
+          <QueryClientProvider client={queryClient}>
+            <StatusBar style="light" />
+            <View style={{ flex: 1, backgroundColor: colors.bg.primary }}>
+              <OfflineBanner />
+              <View style={{ flex: 1 }}>
+                <AuthGate>
+                  <Stack screenOptions={{ headerShown: false }} />
+                </AuthGate>
+              </View>
             </View>
-          </View>
-        </QueryClientProvider>
-      </MaybeStripeProvider>
-    </ErrorBoundary>
+          </QueryClientProvider>
+        </MaybeStripeProvider>
+      </ErrorBoundary>
+    </GestureHandlerRootView>
   );
 }

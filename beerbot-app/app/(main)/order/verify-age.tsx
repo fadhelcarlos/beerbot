@@ -4,6 +4,7 @@ import {
   Text,
   Image,
   Pressable,
+  ScrollView,
   Alert,
   Platform,
   StyleSheet,
@@ -513,7 +514,12 @@ export default function VerifyAgeScreen() {
         </View>
       </Pressable>
 
-      <View style={styles.explanationContent}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.explanationContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Shield icon */}
         <Animated.View
           entering={FadeIn.duration(400)}
@@ -601,7 +607,7 @@ export default function VerifyAgeScreen() {
             </Text>
           </Pressable>
         </Animated.View>
-      </View>
+      </ScrollView>
 
       {/* CTA Button */}
       <Animated.View
@@ -679,9 +685,10 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   explanationContent: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: spacing.screenPadding,
     justifyContent: 'center',
+    paddingBottom: 16,
   },
   expectCard: {
     marginTop: spacing.sectionGap,

@@ -4,6 +4,7 @@ import {
   Text,
   Image,
   Pressable,
+  ScrollView,
   useWindowDimensions,
   StyleSheet,
 } from 'react-native';
@@ -209,57 +210,65 @@ export default function WelcomeScreen() {
         { paddingTop: insets.top, paddingBottom: insets.bottom },
       ]}
     >
-      {/* Hero — logo + tagline */}
-      <Animated.View
-        style={[styles.heroContainer, heroAnimatedStyle]}
-        entering={FadeInDown.duration(600).delay(100)}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+        keyboardShouldPersistTaps="handled"
       >
-        <Image
-          source={require('../../assets/app_logo.png')}
-          style={styles.appLogo}
-          resizeMode="contain"
-        />
-        <Text style={styles.tagline}>
-          Your self-serve beer companion
-        </Text>
-      </Animated.View>
+        {/* Hero — logo + tagline */}
+        <Animated.View
+          style={[styles.heroContainer, heroAnimatedStyle]}
+          entering={FadeInDown.duration(600).delay(100)}
+        >
+          <Image
+            source={require('../../assets/app_logo.png')}
+            style={styles.appLogo}
+            resizeMode="contain"
+          />
+          <Text style={styles.tagline}>
+            Your self-serve beer companion
+          </Text>
+        </Animated.View>
 
-      {/* Carousel */}
-      <Animated.View
-        style={styles.carouselArea}
-        entering={FadeInUp.duration(500).delay(300)}
-      >
-        <GestureDetector gesture={panGesture}>
-          <Animated.View style={styles.carouselOuter}>
-            <Animated.View
-              style={[
-                styles.slidesRow,
-                { width: width * SLIDES.length },
-                slidesContainerStyle,
-              ]}
-            >
-              {SLIDES.map((slide, i) => (
-                <SlideContent
-                  key={slide.title}
-                  slide={slide}
-                  index={i}
-                  scrollX={scrollX}
-                  width={width}
-                />
-              ))}
+        {/* Carousel */}
+        <Animated.View
+          style={styles.carouselArea}
+          entering={FadeInUp.duration(500).delay(300)}
+        >
+          <GestureDetector gesture={panGesture}>
+            <Animated.View style={styles.carouselOuter}>
+              <Animated.View
+                style={[
+                  styles.slidesRow,
+                  { width: width * SLIDES.length },
+                  slidesContainerStyle,
+                ]}
+              >
+                {SLIDES.map((slide, i) => (
+                  <SlideContent
+                    key={slide.title}
+                    slide={slide}
+                    index={i}
+                    scrollX={scrollX}
+                    width={width}
+                  />
+                ))}
+              </Animated.View>
             </Animated.View>
-          </Animated.View>
-        </GestureDetector>
+          </GestureDetector>
 
-        {/* Dot indicators */}
-        <View style={styles.dotsRow}>
-          {SLIDES.map((_, i) => (
-            <Dot key={i} index={i} activeIndex={activeIndex} />
-          ))}
-        </View>
-      </Animated.View>
+          {/* Dot indicators */}
+          <View style={styles.dotsRow}>
+            {SLIDES.map((_, i) => (
+              <Dot key={i} index={i} activeIndex={activeIndex} />
+            ))}
+          </View>
+        </Animated.View>
+      </ScrollView>
 
-      {/* Bottom CTAs */}
+      {/* Bottom CTAs — fixed outside ScrollView */}
       <Animated.View
         style={[styles.ctaArea, { paddingHorizontal: spacing.screenPadding }]}
         entering={FadeInUp.duration(500).delay(500)}
@@ -289,14 +298,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg.primary,
   },
+  scrollContent: {
+    flexGrow: 1,
+  },
   heroContainer: {
-    flex: 2,
+    paddingTop: 40,
+    paddingBottom: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
   appLogo: {
-    width: 200,
-    height: 200,
+    width: 180,
+    height: 180,
   },
   tagline: {
     color: colors.text.secondary,
@@ -305,7 +318,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   carouselArea: {
-    flex: 3,
+    flex: 1,
+    minHeight: 260,
   },
   carouselOuter: {
     flex: 1,

@@ -294,3 +294,45 @@ after each iteration and it's included in prompts for context.
   - `(p_expires_minutes || ' minutes')::interval` is valid PostgreSQL syntax for constructing an interval from a parameter
 ---
 
+## 2026-02-11 - US-014
+- What was implemented:
+  - Replaced placeholder `app/(auth)/login.tsx` with full login screen:
+    - Email and password fields with client-side validation on blur
+    - Show/Hide password toggle button inside password field
+    - "Forgot password?" link navigating to `/(auth)/forgot-password`
+    - Submit triggers `supabase.auth.signInWithPassword()` with error mapping
+    - On success: saves email to SecureStore for biometric, navigates to `/(main)/venues`
+    - On failure: displays mapped error messages (Invalid credentials, Email not confirmed, Too many requests)
+    - Biometric login: checks `expo-local-authentication` hardware + enrollment + stored previous login email
+    - Shows Face ID / Fingerprint button with "or" divider when biometric is available
+    - Biometric flow: authenticates locally → checks Supabase session validity → navigates or falls back
+    - Loading state with disabled buttons + ActivityIndicator during auth
+    - BeerBot dark theme, FadeIn animation, KeyboardAvoidingView, safe area insets
+  - Created `app/(auth)/forgot-password.tsx` with full password reset flow:
+    - Email input with validation, calls `supabase.auth.resetPasswordForEmail()`
+    - Success state showing "Check your email" confirmation
+    - Uses `beerbot://reset-password` deep link as redirect URL
+  - Updated `app/_layout.tsx` with AuthGate wrapper:
+    - Initializes auth store listener on mount (returns cleanup)
+    - Auto-redirects authenticated users from `(auth)` → `(main)/venues`
+    - Auto-redirects unauthenticated users from `(main)` → `(auth)/welcome`
+    - Session persistence: Supabase client already stores tokens in `expo-secure-store` (configured in US-003)
+  - Updated `app.json`: added `expo-local-authentication` plugin with Face ID permission
+  - Installed `expo-local-authentication` package
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes (0 errors, 0 warnings)
+- Files changed:
+  - `app/(auth)/login.tsx` — full login screen with biometric auth (rewritten from placeholder)
+  - `app/(auth)/forgot-password.tsx` — password reset screen (new)
+  - `app/_layout.tsx` — AuthGate with session check and auth redirect (updated)
+  - `app.json` — added expo-local-authentication plugin + Face ID permission
+  - `package.json` — added `expo-local-authentication` dependency
+- **Learnings:**
+  - `expo-local-authentication` requires both `hasHardwareAsync()` AND `isEnrolledAsync()` to be true — hardware present doesn't mean biometrics are configured
+  - `supportedAuthenticationTypesAsync()` returns an array of `AuthenticationType` enums — check for `FACIAL_RECOGNITION` (1) or `FINGERPRINT` (2) to show the right label
+  - Biometric auth only gates local device access — the actual session token is already persisted in SecureStore by the Supabase client. After biometric confirmation, call `getSession()` to verify the token is still valid.
+  - For auth redirect in Expo Router, use `useSegments()` to detect the current route group and `router.replace()` to redirect. Must guard with `isLoading` to avoid redirecting before session check completes.
+  - Expo lint enforces `react/no-unescaped-entities` — use `&apos;` for apostrophes in JSX text content
+  - The `AuthGate` pattern (wrapper component in root layout) is the standard Expo Router approach for auth-gated navigation — avoids race conditions by checking auth state before rendering routes
+---
+

@@ -18,7 +18,8 @@
       "bundleIdentifier": "com.beerbot.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "BeerBot uses your location to find nearby venues.",
-        "NSCameraUsageDescription": "BeerBot uses your camera for age verification."
+        "NSCameraUsageDescription": "BeerBot uses your camera for age verification.",
+        "NSFaceIDUsageDescription": "BeerBot uses Face ID for quick and secure login."
       }
     },
     "android": {
@@ -52,6 +53,12 @@
         {
           "icon": "./assets/icon.png",
           "color": "#f59e0b"
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "BeerBot uses Face ID for quick and secure login."
         }
       ]
     ],

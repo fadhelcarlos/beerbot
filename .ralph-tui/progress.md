@@ -735,3 +735,42 @@ after each iteration and it's included in prompts for context.
   - Supabase realtime `postgres_changes` can filter individual rows with `filter: 'id=eq.${orderId}'` — more efficient than subscribing to all orders
 ---
 
+## 2026-02-11 - US-021
+- What was implemented:
+  - Created `app/(main)/order/redeem.tsx` — full QR Code Display screen with countdown timer:
+    - Large QR code (240px) rendered center-screen using `react-native-qrcode-svg` inside a white rounded container
+    - QR encodes the signed JWT token from `order.qr_code_token` via `generateQrDataString()` — produces `beerbot://redeem?token=<jwt>` deep link (not raw order ID)
+    - Below QR: "Go to Tap #X" in large bold brand-colored text
+    - Step-by-step numbered instructions: "1. Walk to Tap #X  2. Scan this code  3. Enjoy your beer!" with branded circular step indicators
+    - Countdown timer showing time remaining to redeem, calculated from `order.expires_at`
+    - Timer updates every second via `useCountdown` hook, displays MM:SS format
+    - Timer turns red with urgency message when under 2 minutes remaining
+    - Auto-transitions to "expired" state when timer reaches 00:00
+    - Order summary section: beer name, quantity, venue name (fetched from Supabase)
+    - Screen brightness auto-maximized to 1.0 via `expo-brightness`, original brightness restored on unmount
+    - Screen stays awake via `useKeepAwake()` from `expo-keep-awake`
+    - "View Order Details" expandable/collapsible section with full info: order ID, status, serving size, unit price, total paid, paid_at, expires_at
+    - Loading state while fetching order + generating QR token
+    - Error state with "Back to Venues" button
+    - Expired state with automatic refund messaging and "Back to Venues" button
+    - Confirmation dialog before leaving QR screen to prevent accidental navigation
+    - BeerBot dark theme (bg-dark, brand amber accents), FadeIn/FadeInDown staggered entrance animations, safe area insets
+  - Updated `app/(main)/order/payment.tsx`:
+    - Changed navigation target from `/(main)/order/qr` to `/(main)/order/redeem` in both realtime subscription handler and polling fallback
+  - Installed `expo-brightness` and `expo-keep-awake` packages
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes (0 errors, 0 warnings)
+- Files changed:
+  - `app/(main)/order/redeem.tsx` — full QR code display + countdown screen (new)
+  - `app/(main)/order/payment.tsx` — updated navigation to redeem screen
+  - `package.json` — added `expo-brightness`, `expo-keep-awake` dependencies
+- **Learnings:**
+  - `expo-brightness` `setBrightnessAsync(1)` maximizes screen brightness; save original value with `getBrightnessAsync()` and restore on unmount for good UX
+  - `useKeepAwake()` from `expo-keep-awake` is a simple hook that prevents screen sleep while the component is mounted — no cleanup needed, it auto-deactivates on unmount
+  - `react-native-qrcode-svg` was already installed (US-001) — it accepts a `value` string and `size` prop, renders SVG via `react-native-svg`
+  - The QR data string should encode the JWT token as a deep link (`beerbot://redeem?token=<jwt>`) not the raw token — this allows scanning devices to trigger the app's verification flow
+  - For countdown timers, a custom hook with `setInterval` at 1-second intervals and `Math.max(0, ...)` clamping handles expiration cleanly without negative values
+  - `expo-brightness` and `expo-keep-awake` don't need app.json plugin entries — they work out of the box with Expo SDK 54
+  - When importing multiple named exports from the same module, combine them into a single import statement to avoid `import/no-duplicates` lint warnings
+---
+

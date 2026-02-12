@@ -146,7 +146,7 @@ export default function PaymentScreen() {
               // Brief celebration moment then navigate
               setTimeout(() => {
                 router.replace({
-                  pathname: '/(main)/order/qr',
+                  pathname: '/(main)/order/redeem',
                   params: { orderId: updatedOrder.id },
                 });
               }, 1500);
@@ -190,7 +190,7 @@ export default function PaymentScreen() {
             setPaymentState('success');
             setTimeout(() => {
               router.replace({
-                pathname: '/(main)/order/qr',
+                pathname: '/(main)/order/redeem',
                 params: { orderId: order.id },
               });
             }, 1500);

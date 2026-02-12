@@ -9,6 +9,19 @@ export interface Venue {
   created_at: string;
 }
 
+export interface VenueWithDistance extends Venue {
+  distance_miles: number | null;
+}
+
+export interface TapPricing {
+  id: string;
+  tap_id: string;
+  price_12oz: number;
+  pour_size_oz: number;
+  currency: string;
+  created_at: string;
+}
+
 export interface Beer {
   id: string;
   name: string;

@@ -19,6 +19,7 @@ after each iteration and it's included in prompts for context.
 - **Auth store**: `lib/stores/auth-store.ts` — Zustand store with Supabase session/user, `initialize()` returns cleanup function for auth listener
 - **RLS pattern**: Public tables (venues, beers, taps, tap_pricing) use `TO anon, authenticated` SELECT. User-owned data (orders, order_events) filters by `auth.uid()`. Admin tables (admin_pour_logs) have no app-user policies — service_role only.
 - **Reanimated SharedValue type**: Import `type SharedValue` directly from `react-native-reanimated`, NOT `Animated.SharedValue` (the namespace doesn't export it in v4).
+- **API layer pattern**: `lib/api/{resource}.ts` — typed query functions using Supabase client, with RPC calls for computed queries and `.select()` with nested joins for relational data. Realtime subscriptions via `supabase.channel()` + `postgres_changes`.
 
 ---
 
@@ -151,5 +152,32 @@ after each iteration and it's included in prompts for context.
   - `activeOffsetX` + `failOffsetY` on Pan gesture prevents vertical scroll interference while allowing horizontal swipes
   - Lottie JSON can be hand-authored for simple placeholder animations — shapes (rc, el) + keyframed transforms + opacity
   - Typed routes with Expo Router require target screens to exist, even as placeholders, for `router.push()` to pass `tsc`
+---
+
+## 2026-02-11 - US-004
+- What was implemented:
+  - Created `lib/api/venues.ts` with typed query functions:
+    - `fetchVenues(params?)` — fetches all active venues; when lat/lng provided, calls `get_venues_nearby` RPC for Haversine proximity sorting with `distance_miles`
+    - `fetchVenueTaps(venueId)` — fetches active taps for a venue with joined beer data (via Supabase nested select `beers (*)`) and pricing (`tap_pricing (price_12oz)`), computes `availability_status` per tap based on `oz_remaining` vs `low_threshold_oz`
+    - `subscribeTaps(venueId, onUpdate)` — Supabase realtime subscription for taps table filtered by venue, returns `RealtimeChannel` for cleanup
+  - Created `supabase/migrations/20260211200000_venues_nearby.sql`:
+    - `get_venues_nearby(user_lat, user_lng)` SQL function using Haversine formula (3959 * acos(...)) for distance in miles
+    - `LEAST/GREATEST` clamping on acos input to prevent NaN from floating-point drift
+    - Returns all active venues sorted by distance when coordinates provided, by name otherwise
+  - Updated `types/api.ts`:
+    - Added `VenueWithDistance` interface extending `Venue` with `distance_miles: number | null`
+    - Added `TapPricing` interface for tap pricing rows
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `supabase/migrations/20260211200000_venues_nearby.sql` — proximity sorting SQL function (new)
+  - `lib/api/venues.ts` — venue/tap query functions + realtime subscription (new)
+  - `types/api.ts` — added `VenueWithDistance`, `TapPricing` types
+- **Learnings:**
+  - Supabase `.rpc()` calls invoke SQL functions; the TypeScript return type is `unknown[]` by default — cast to the expected type after the call
+  - Supabase nested select syntax `beers (*)` joins via FK automatically; the result key is the table name (plural `beers`), not the FK column name (`beer_id`)
+  - Haversine `acos()` can receive values slightly outside [-1, 1] due to floating-point precision — wrapping with `LEAST(1.0, GREATEST(-1.0, ...))` prevents `NaN`
+  - Supabase realtime `postgres_changes` filter syntax: `venue_id=eq.${venueId}` — matches PostgREST filter format
+  - `STABLE` volatility on the SQL function is correct since it only reads data and results are consistent within a transaction
 ---
 

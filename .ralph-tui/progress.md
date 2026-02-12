@@ -22,6 +22,7 @@ after each iteration and it's included in prompts for context.
 - **API layer pattern**: `lib/api/{resource}.ts` — typed query functions using Supabase client, with RPC calls for computed queries and `.select()` with nested joins for relational data. Realtime subscriptions via `supabase.channel()` + `postgres_changes`.
 - **Edge Functions pattern**: `supabase/functions/{fn-name}/index.ts` — Deno runtime with ESM imports from `esm.sh`. Use two Supabase clients: user JWT client (for identity) + service_role client (for privileged writes). Must exclude `supabase/functions` from `tsconfig.json` (Deno != Node).
 - **Edge Function invocation**: `supabase.functions.invoke<T>(fnName, { method })` — auto-passes user's auth token. Returns typed `{ data, error }`.
+- **Cron-safe DB functions**: Use `FOR UPDATE SKIP LOCKED` when writing PL/pgSQL functions called by pg_cron — prevents deadlocks if jobs overlap. Prefer SQL `SET col = col + X` for atomic increments over Supabase JS read-then-write.
 
 ---
 
@@ -450,5 +451,36 @@ after each iteration and it's included in prompts for context.
   - Supabase JS client doesn't support `SET col = col + X` syntax — for atomic increments (restoring inventory), need read-then-write or an RPC function. Read-then-write is acceptable in webhook context since concurrent writes to the same tap are unlikely during failure handling
   - `STRIPE_WEBHOOK_SECRET` must be set as a Supabase secret (`supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_...`) — obtained from Stripe Dashboard > Developers > Webhooks
   - QR token generation is inlined in the webhook handler rather than calling the `generate-qr-token` Edge Function, because Edge Functions can't easily invoke other Edge Functions internally — the inline approach mirrors the same JWT signing logic
+---
+
+## 2026-02-11 - US-010
+- What was implemented:
+  - Created `supabase/migrations/20260211500000_expire_stale_orders.sql`:
+    - `expire_stale_orders()` PL/pgSQL function (SECURITY DEFINER) that finds all orders with `status = 'ready_to_redeem'` and `expires_at < now()`
+    - Uses `FOR UPDATE SKIP LOCKED` to safely handle concurrent cron executions without deadlocks
+    - For each expired order: updates status to `expired`, logs `expired` event to `order_events`, restores `oz_remaining` on the tap atomically via `SET oz_remaining = oz_remaining + (quantity * pour_size_oz)`
+    - Returns JSON with `expired_count` and `expired_order_ids` for observability
+    - Enables `pg_cron` extension and schedules `expire-stale-orders` job to run every minute (`* * * * *`)
+  - Created `supabase/functions/process-expired-orders/index.ts` (Deno Edge Function):
+    - Calls `expire_stale_orders()` RPC to first expire stale orders in the database
+    - Fetches all orders with `status = 'expired'` that have a `stripe_payment_intent_id` (need refund)
+    - For each expired order: calls `stripe.refunds.create()` with the `payment_intent` ID for full refund
+    - On successful refund: updates order status to `refunded`, logs `refunded` event with Stripe refund metadata
+    - Idempotency: checks for existing `refunded` event on the order before issuing Stripe refund
+    - Handles Stripe refund failures gracefully: logs `refund_failed` event with `requires_manual_review: true` flag, continues processing remaining orders
+    - Returns summary JSON: `expired_count`, `refunded_count`, `failed_count`, and per-order results
+  - No client-side (Expo) changes needed — this is entirely backend/infrastructure
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `supabase/migrations/20260211500000_expire_stale_orders.sql` — expire function + pg_cron schedule (new)
+  - `supabase/functions/process-expired-orders/index.ts` — Stripe refund Edge Function (new)
+- **Learnings:**
+  - `FOR UPDATE SKIP LOCKED` in PostgreSQL is essential for cron jobs that may overlap — it skips rows locked by a concurrent execution rather than waiting/deadlocking
+  - Unlike the `handlePaymentFailed` in stripe-webhook (which uses read-then-write for tap inventory restoration), the database function can use `SET oz_remaining = oz_remaining + X` directly in SQL — this is atomic and doesn't need the Supabase JS client limitation workaround
+  - pg_cron on Supabase requires enabling the `pg_cron` extension (Pro plan+) and granting `USAGE ON SCHEMA cron TO postgres`
+  - The two-phase approach (database function for expiration + Edge Function for Stripe refunds) separates concerns: the DB function handles fast, transactional state changes; the Edge Function handles slow, external API calls (Stripe)
+  - `stripe.refunds.create({ payment_intent })` issues a full refund by default — no need to specify `amount` for full refunds
+  - For scheduled Edge Function invocation, Supabase supports cron-based HTTP triggers or the function can be called by pg_cron via `pg_net` extension / Supabase scheduled functions feature
 ---
 

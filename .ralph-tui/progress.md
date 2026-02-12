@@ -18,6 +18,7 @@ after each iteration and it's included in prompts for context.
 - **Supabase client**: `lib/supabase.ts` — uses `expo-secure-store` for session storage, env vars `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 - **Auth store**: `lib/stores/auth-store.ts` — Zustand store with Supabase session/user, `initialize()` returns cleanup function for auth listener
 - **RLS pattern**: Public tables (venues, beers, taps, tap_pricing) use `TO anon, authenticated` SELECT. User-owned data (orders, order_events) filters by `auth.uid()`. Admin tables (admin_pour_logs) have no app-user policies — service_role only.
+- **Reanimated SharedValue type**: Import `type SharedValue` directly from `react-native-reanimated`, NOT `Animated.SharedValue` (the namespace doesn't export it in v4).
 
 ---
 
@@ -119,5 +120,36 @@ after each iteration and it's included in prompts for context.
   - For `admin_pour_logs`, enabling RLS with no policies effectively restricts to service_role only (which bypasses RLS)
   - Expo uses `EXPO_PUBLIC_` prefix for client-accessible env vars (equivalent to `NEXT_PUBLIC_` in Next.js)
   - `expo-secure-store` works as a drop-in Supabase auth storage adapter with `getItemAsync`/`setItemAsync`/`deleteItemAsync`
+---
+
+## 2026-02-11 - US-012
+- What was implemented:
+  - Built full welcome/onboarding screen at `app/(auth)/welcome.tsx` with:
+    - Animated Lottie hero area with beer mug animation (placeholder branding)
+    - 3-slide swipeable carousel: "Order Your Beer", "Verify Your Age", "Scan & Pour"
+    - Smooth page transitions using `react-native-reanimated` (withSpring, interpolate)
+    - Pan gesture handling via `react-native-gesture-handler` GestureDetector (works iOS + Android)
+    - Animated dot indicators that expand/contract based on active slide
+    - Fade-in entrance animation for the Lottie hero
+    - "Get Started" CTA button navigating to registration screen
+    - "I already have an account" link navigating to login screen
+    - NativeWind + BeerBot dark theme with amber/gold accents
+    - Responsive layout using flex ratios and useWindowDimensions (iPhone SE to Pro Max)
+    - Safe area insets via useSafeAreaInsets
+  - Created `assets/welcome-animation.json` — custom Lottie animation (beer mug with foam, bubbles, gentle rocking)
+  - Created placeholder `app/(auth)/register.tsx` and `app/(auth)/login.tsx` for navigation targets
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `app/(auth)/welcome.tsx` — full welcome screen with carousel (rewritten from placeholder)
+  - `app/(auth)/register.tsx` — placeholder registration screen (new)
+  - `app/(auth)/login.tsx` — placeholder login screen (new)
+  - `assets/welcome-animation.json` — Lottie animation file (new)
+- **Learnings:**
+  - `Animated.SharedValue` namespace type doesn't work in reanimated v4 — must import `type SharedValue` directly from `react-native-reanimated`
+  - Building a custom carousel with `GestureDetector` + `Gesture.Pan()` gives full control over swipe thresholds and animation curves vs. using a third-party carousel library
+  - `activeOffsetX` + `failOffsetY` on Pan gesture prevents vertical scroll interference while allowing horizontal swipes
+  - Lottie JSON can be hand-authored for simple placeholder animations — shapes (rc, el) + keyframed transforms + opacity
+  - Typed routes with Expo Router require target screens to exist, even as placeholders, for `router.push()` to pass `tsc`
 ---
 

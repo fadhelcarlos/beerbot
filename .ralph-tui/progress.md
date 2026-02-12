@@ -522,3 +522,39 @@ after each iteration and it's included in prompts for context.
   - Returning the `correct_tap_number` in `WRONG_TAP` errors lets the PLC display which tap the customer should go to — better UX than just an error code
 ---
 
+## 2026-02-11 - US-015
+- What was implemented:
+  - Created `app/(auth)/reset-password.tsx` with full password reset flow:
+    - New password + confirm password fields with show/hide toggles
+    - Validation: min 8 characters, passwords must match, field-level errors on blur
+    - Accepts `access_token` and `refresh_token` via route params (from deep link)
+    - Sets Supabase recovery session from tokens via `supabase.auth.setSession()`
+    - On submit: calls `supabase.auth.updateUser({ password })` to change password
+    - On success: shows confirmation message, auto-navigates to `/(main)/venues` after 1.5s
+    - Error handling: expired/invalid links with "Request a new reset link" fallback
+    - Loading state while verifying reset link, disabled buttons during submission
+    - BeerBot dark theme, FadeIn animation, KeyboardAvoidingView, safe area insets
+  - Updated `app/_layout.tsx` AuthGate:
+    - Added deep link handling via `expo-linking` (getInitialURL + addEventListener)
+    - Parses Supabase hash fragment tokens (`#access_token=...&refresh_token=...&type=recovery`)
+    - Routes recovery deep links to `/(auth)/reset-password` with tokens as params
+    - Added exception: authenticated users on `reset-password` are NOT redirected to main (allows password update before redirect)
+  - Updated `app/(auth)/forgot-password.tsx`:
+    - Changed success message to "Check your email for a reset link" to match AC exactly
+  - Deep link scheme `beerbot://` already configured in `app.json` (from US-001)
+  - `beerbot://reset-password` redirect URL already set in `forgot-password.tsx` (from US-014)
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `app/(auth)/reset-password.tsx` — password reset deep link landing screen (new)
+  - `app/_layout.tsx` — added deep link handling + reset-password AuthGate exception
+  - `app/(auth)/forgot-password.tsx` — updated success message text
+- **Learnings:**
+  - Supabase password reset sends tokens as URL hash fragments (`#access_token=...&type=recovery`), not query params — must parse with `url.indexOf('#')` + `URLSearchParams(fragment)` manually
+  - In React Native, `supabase.auth.setSession()` with the recovery tokens establishes a valid session that allows `updateUser({ password })` to work — this is the mobile equivalent of Supabase's automatic session detection on web
+  - Expo Router's `useSegments()` returns typed tuples with `typedRoutes: true` — accessing `segments[1]` fails type checking. Cast to `string[]` first: `(segments as string[])[1]`
+  - AuthGate must exempt `reset-password` from the "authenticated user on auth screen → redirect to main" rule, otherwise the user gets redirected before they can set a new password (the recovery session makes them "authenticated")
+  - `expo-linking` `getInitialURL()` handles cold starts (app opened via deep link), while `addEventListener('url')` handles warm starts (app already running in background)
+  - The `redirectTo` in `resetPasswordForEmail()` must match the deep link scheme + path (`beerbot://reset-password`) — Supabase appends tokens as hash fragments to this URL
+---
+

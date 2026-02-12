@@ -99,7 +99,7 @@ export default function ForgotPasswordScreen() {
               className="mt-8 rounded-xl bg-green-500/15 border border-green-500/30 px-4 py-4"
             >
               <Text className="text-green-400 text-base font-medium">
-                Check your email
+                Check your email for a reset link
               </Text>
               <Text className="text-green-400/70 text-sm mt-1">
                 We sent a password reset link to {email}

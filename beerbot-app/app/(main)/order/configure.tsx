@@ -268,19 +268,19 @@ export default function OrderConfigureScreen() {
     setQuantity((q) => Math.min(MAX_QUANTITY, q + 1));
   }, []);
 
-  // Continue to age verification
+  // Continue to age verification gate
   const handleContinue = useCallback(() => {
     if (!tap) return;
-    // Navigate to age verification gate (future US)
-    // For now, navigate forward with order params
     router.push({
-      pathname: '/(main)/order/configure',
+      pathname: '/(main)/order/verify-age',
       params: {
         tapId: tap.id,
         venueId: tap.venue_id,
+        quantity: String(quantity),
+        totalPrice: totalPrice.toFixed(2),
       },
     });
-  }, [tap, router]);
+  }, [tap, router, quantity, totalPrice]);
 
   if (tapsQuery.isLoading) {
     return (

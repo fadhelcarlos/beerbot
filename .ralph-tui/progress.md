@@ -659,3 +659,43 @@ after each iteration and it's included in prompts for context.
   - When adding route params to navigation calls in `useCallback`, remember to add them to the dependency array or ESLint `exhaustive-deps` will warn
 ---
 
+## 2026-02-11 - US-019
+- What was implemented:
+  - Created `app/(main)/order/verify-age.tsx` — Age Verification Gate screen:
+    - Checks `age_verified` status via TanStack Query on mount; auto-skips to payment screen if already verified
+    - Explanation screen with shield icon, "We need to verify you're 21+" messaging, and 3-step overview (ID photo, selfie, liveness check)
+    - Privacy notice: "Your ID is processed securely by Veriff and not stored by BeerBot"
+    - "Remember my verification" checkbox (default on) with animated toggle
+    - "Verify My Age" CTA button starts Veriff session via `createVerificationSession()` Edge Function
+    - Veriff SDK launched in-app via `react-native-webview` WebView (not external browser)
+    - WebView configured with `mediaCapturePermissionGrantType="grant"` for iOS camera auto-grant, `androidLayerType="hardware"` for Android camera
+    - Loading state while creating verification session
+    - Processing state with polling: after Veriff approval detected in navigation URL, polls `checkVerificationStatus()` every 2s for webhook-updated `age_verified` flag
+    - Success state: shows checkmark, then auto-navigates to payment screen after 1.2s
+    - Failure states: maps Veriff result codes (9102=declined, 9103=resubmit, 9104=expired) to user-friendly messages ("ID not readable", "Liveness failed")
+    - Retry support: max 3 attempts, shows attempt counter on failure
+    - Rate limit handling: catches 429 from Edge Function, shows appropriate alert
+    - Cancel confirmation dialog when user tries to leave WebView mid-verification
+    - Network error handling: WebView `onError` and `onHttpError` callbacks
+    - 30s polling timeout: if webhook is slow, navigates to payment anyway (payment screen re-checks)
+    - BeerBot dark theme, FadeIn/FadeInDown entrance animations, safe area insets
+  - Created `app/(main)/order/payment.tsx` — placeholder payment screen (navigation target for typed routes)
+  - Updated `app/(main)/order/configure.tsx`:
+    - "Continue" CTA now navigates to `/(main)/order/verify-age` with `tapId`, `venueId`, `quantity`, `totalPrice` params
+  - Installed `react-native-webview` package for in-app Veriff WebView
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes (0 errors, 0 warnings)
+- Files changed:
+  - `app/(main)/order/verify-age.tsx` — age verification gate screen (new)
+  - `app/(main)/order/payment.tsx` — placeholder payment screen (new)
+  - `app/(main)/order/configure.tsx` — updated "Continue" navigation to verify-age
+  - `package.json` — added `react-native-webview` dependency
+- **Learnings:**
+  - `react-native-webview` does NOT have an `onPermissionRequest` prop — camera permissions for WebView are handled via `mediaCapturePermissionGrantType="grant"` on iOS and `androidLayerType="hardware"` on Android
+  - For objects used as React hook dependencies (like route params passed between screens), wrap in `useMemo` to prevent ESLint `react-hooks/exhaustive-deps` warnings about objects changing on every render
+  - Veriff web-based flow works via session URL in WebView without requiring `@veriff/react-native-sdk` — the WebView approach is lighter and avoids native SDK linking complexity
+  - Polling with `setInterval` + `setTimeout` for max duration is a simple pattern for waiting on webhook-driven backend updates; clearing the interval on success prevents unnecessary API calls
+  - `mediaCapturePermissionGrantType="grant"` (iOS only) auto-grants camera/mic permissions to the WebView without prompting — essential for Veriff's in-app flow
+  - Placeholder screens are required for Expo Router typed routes even if the destination will be implemented in a future user story
+---
+

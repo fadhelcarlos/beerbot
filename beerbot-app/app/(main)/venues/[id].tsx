@@ -2,9 +2,11 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
+  Image,
   Pressable,
   FlatList,
   RefreshControl,
+  StyleSheet,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,24 +17,45 @@ import Animated, {
   useSharedValue,
   interpolate,
   Extrapolation,
+  withSpring,
 } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
+import * as Haptics from 'expo-haptics';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  AlertTriangle,
+  Thermometer,
+  Beer,
+  MapPin,
+  ChevronRight,
+} from 'lucide-react-native';
 import {
   fetchVenue,
   fetchVenueTaps,
   subscribeTaps,
 } from '@/lib/api/venues';
 import { formatErrorMessage } from '@/lib/utils/error-handler';
-import SkeletonLoader from '@/components/SkeletonLoader';
+import { getBeerImageUrl, getVenueImageUrl } from '@/lib/utils/images';
+import { GlassCard, GoldButton, PremiumBadge, ShimmerLoader } from '@/components/ui';
+import {
+  colors,
+  typography,
+  radius,
+  spacing,
+  shadows,
+  springs,
+} from '@/lib/theme';
 import type { TapWithBeer, Tap } from '@/types/api';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
-const FAR_THRESHOLD_MILES = 0.5; // ~800m — beyond this we show "not at venue" warning
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-// ─────────────────────────────────────────────────
+const FAR_THRESHOLD_MILES = 0.5; // ~800m -- beyond this we show "not at venue" warning
+
+// ---------------------------------------------------------------
 // Availability Badge
-// ─────────────────────────────────────────────────
+// ---------------------------------------------------------------
 
 function AvailabilityBadge({
   status,
@@ -41,31 +64,17 @@ function AvailabilityBadge({
 }) {
   switch (status) {
     case 'available':
-      return (
-        <View className="bg-green-500/20 rounded-full px-2.5 py-0.5">
-          <Text className="text-xs font-semibold text-green-400">
-            Available
-          </Text>
-        </View>
-      );
+      return <PremiumBadge label="Available" variant="success" />;
     case 'low':
-      return (
-        <View className="bg-yellow-500/20 rounded-full px-2.5 py-0.5">
-          <Text className="text-xs font-semibold text-yellow-400">Low</Text>
-        </View>
-      );
+      return <PremiumBadge label="Low" variant="warning" />;
     case 'out':
-      return (
-        <View className="bg-red-500/20 rounded-full px-2.5 py-0.5">
-          <Text className="text-xs font-semibold text-red-400/70">Sold Out</Text>
-        </View>
-      );
+      return <PremiumBadge label="Sold Out" variant="danger" />;
   }
 }
 
-// ─────────────────────────────────────────────────
+// ---------------------------------------------------------------
 // Temperature Display
-// ─────────────────────────────────────────────────
+// ---------------------------------------------------------------
 
 function TemperatureDisplay({
   temperatureF,
@@ -75,30 +84,44 @@ function TemperatureDisplay({
   tempOk: boolean;
 }) {
   if (temperatureF == null) {
-    return <Text className="text-xs text-white/30">Temp: N/A</Text>;
-  }
-
-  if (!tempOk) {
     return (
-      <View className="bg-blue-500/20 rounded-full px-2.5 py-0.5 flex-row items-center">
-        <Text className="text-xs mr-1">{'\u2744\uFE0F'}</Text>
-        <Text className="text-xs font-semibold text-blue-400">
-          Cooling down
+      <View style={styles.tempRow}>
+        <Thermometer size={12} color={colors.text.tertiary} strokeWidth={2} />
+        <Text
+          style={[
+            typography.caption,
+            { color: colors.text.tertiary, marginLeft: 4 },
+          ]}
+        >
+          N/A
         </Text>
       </View>
     );
   }
 
+  if (!tempOk) {
+    return <PremiumBadge label="Cooling down" variant="info" />;
+  }
+
   return (
-    <Text className="text-xs text-white/50">
-      {Math.round(temperatureF)}{'\u00B0'}F
-    </Text>
+    <View style={styles.tempRow}>
+      <Thermometer size={12} color={colors.text.secondary} strokeWidth={2} />
+      <Text
+        style={[
+          typography.caption,
+          { color: colors.text.secondary, marginLeft: 4 },
+        ]}
+      >
+        {Math.round(temperatureF)}
+        {'\u00B0'}F
+      </Text>
+    </View>
   );
 }
 
-// ─────────────────────────────────────────────────
-// Beer Card
-// ─────────────────────────────────────────────────
+// ---------------------------------------------------------------
+// Beer Card — with thumbnail image
+// ---------------------------------------------------------------
 
 function BeerCard({
   tap,
@@ -113,74 +136,181 @@ function BeerCard({
   const isLow = tap.availability_status === 'low';
   const isCooling = !tap.temp_ok;
   const disabled = isOut || isCooling;
+  const scale = useSharedValue(1);
+  const beerImageUrl = getBeerImageUrl(
+    tap.beer?.style,
+    tap.beer?.image_url,
+  );
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = () => {
+    scale.value = withSpring(0.98, springs.card);
+  };
+
+  const handlePressOut = () => {
+    scale.value = withSpring(1, springs.card);
+  };
+
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    onPress();
+  };
 
   return (
-    <Animated.View entering={FadeInDown.delay(index * 50).duration(300)}>
-      <Pressable
-        onPress={onPress}
+    <Animated.View
+      entering={FadeInDown.delay(index * 50)
+        .springify()
+        .damping(20)
+        .stiffness(300)}
+    >
+      <AnimatedPressable
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onPress={handlePress}
         disabled={disabled}
-        className={`mx-4 mb-3 rounded-2xl p-4 border ${
-          isOut
-            ? 'bg-dark-700/40 border-dark-600 opacity-50'
-            : isCooling
-              ? 'bg-dark-700/60 border-blue-500/30'
-              : 'bg-dark-700 border-dark-600 active:opacity-80'
-        }`}
+        style={[
+          animatedStyle,
+          styles.beerCardWrapper,
+          disabled && styles.disabledCard,
+        ]}
       >
-        <View className="flex-row items-start justify-between">
-          {/* Beer info */}
-          <View className="flex-1 mr-3">
-            <Text
-              className={`text-lg font-bold ${isOut ? 'text-white/40' : 'text-white'}`}
-              numberOfLines={1}
-            >
-              {tap.beer?.name ?? 'Unknown Beer'}
-            </Text>
-            <Text
-              className={`text-sm mt-0.5 ${isOut ? 'text-white/20' : 'text-white/50'}`}
-              numberOfLines={1}
-            >
-              {tap.beer?.style ?? 'Unknown Style'}
-              {tap.beer?.abv != null ? ` \u00B7 ${tap.beer.abv}%` : ''}
-            </Text>
+        <View style={[styles.beerCard, shadows.card]}>
+          <View style={styles.beerCardInner}>
+            {/* Beer thumbnail */}
+            <View style={styles.beerThumbnailContainer}>
+              <Image
+                source={{ uri: beerImageUrl }}
+                style={styles.beerThumbnail}
+                resizeMode="cover"
+              />
+            </View>
+
+            {/* Beer details */}
+            <View style={styles.beerDetails}>
+              <View style={styles.beerInfoRow}>
+                <View style={styles.beerInfoText}>
+                  <Text
+                    style={[
+                      typography.bodyMedium,
+                      {
+                        color: isOut
+                          ? colors.text.tertiary
+                          : colors.text.primary,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {tap.beer?.name ?? 'Unknown Beer'}
+                  </Text>
+                  <Text
+                    style={[
+                      typography.caption,
+                      {
+                        color: isOut
+                          ? colors.text.tertiary
+                          : colors.text.secondary,
+                        marginTop: 2,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {tap.beer?.style ?? 'Unknown Style'}
+                    {tap.beer?.abv != null ? ` \u00B7 ${tap.beer.abv}%` : ''}
+                  </Text>
+                </View>
+
+                {/* Price */}
+                {tap.price_12oz != null && (
+                  <Text
+                    style={[
+                      typography.heading,
+                      {
+                        color: isOut
+                          ? colors.text.tertiary
+                          : colors.gold[500],
+                        fontSize: 18,
+                      },
+                    ]}
+                  >
+                    ${tap.price_12oz.toFixed(2)}
+                  </Text>
+                )}
+              </View>
+
+              {/* Badges row */}
+              <View style={styles.badgesRow}>
+                <AvailabilityBadge status={tap.availability_status} />
+                <TemperatureDisplay
+                  temperatureF={tap.temperature_f}
+                  tempOk={tap.temp_ok}
+                />
+                {!disabled && (
+                  <View style={styles.orderCta}>
+                    <ChevronRight
+                      size={14}
+                      color={colors.gold[500]}
+                      strokeWidth={2.5}
+                    />
+                  </View>
+                )}
+              </View>
+
+              {/* Low stock warning */}
+              {isLow && !isCooling && (
+                <View style={styles.lowStockRow}>
+                  <AlertTriangle
+                    size={12}
+                    color={colors.status.warning}
+                    strokeWidth={2}
+                  />
+                  <Text
+                    style={[
+                      typography.caption,
+                      {
+                        color: colors.status.warning,
+                        marginLeft: 6,
+                        opacity: 0.8,
+                      },
+                    ]}
+                  >
+                    Limited {'\u2014'} order at the station
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
-
-          {/* Price */}
-          {tap.price_12oz != null && (
-            <Text
-              className={`text-lg font-bold ${isOut ? 'text-white/30' : 'text-brand'}`}
-            >
-              ${tap.price_12oz.toFixed(2)}
-            </Text>
-          )}
         </View>
-
-        {/* Badges row */}
-        <View className="flex-row items-center mt-3 gap-2">
-          <AvailabilityBadge status={tap.availability_status} />
-          <TemperatureDisplay
-            temperatureF={tap.temperature_f}
-            tempOk={tap.temp_ok}
-          />
-        </View>
-
-        {/* Low stock warning */}
-        {isLow && !isCooling && (
-          <Text className="text-xs text-yellow-400/80 mt-2">
-            Limited {'\u2014'} order at the station
-          </Text>
-        )}
-      </Pressable>
+      </AnimatedPressable>
     </Animated.View>
   );
 }
 
-// ─────────────────────────────────────────────────
-// Main Screen
-// ─────────────────────────────────────────────────
+// ---------------------------------------------------------------
+// Section Header
+// ---------------------------------------------------------------
 
-const HEADER_HEIGHT_EXPANDED = 120;
-const HEADER_HEIGHT_COLLAPSED = 60;
+function SectionHeader({ count }: { count: number }) {
+  return (
+    <View style={styles.sectionHeader}>
+      <Text style={[typography.overline, { color: colors.text.secondary }]}>
+        ON TAP
+      </Text>
+      <Text style={[typography.caption, { color: colors.text.tertiary }]}>
+        {count} {count === 1 ? 'beer' : 'beers'}
+      </Text>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------
+// Main Screen
+// ---------------------------------------------------------------
+
+const HEADER_HEIGHT_EXPANDED = 200;
+const HEADER_HEIGHT_COLLAPSED = 64;
 
 export default function VenueDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -206,6 +336,13 @@ export default function VenueDetailScreen() {
     enabled: !!id,
     staleTime: 1000 * 30,
   });
+
+  const venue = venueQuery.data;
+  const venueImageUrl = getVenueImageUrl(
+    venue?.id,
+    venue?.name,
+    venue?.image_url,
+  );
 
   // Check if user is far from venue
   useEffect(() => {
@@ -260,7 +397,6 @@ export default function VenueDetailScreen() {
           if (!prev) return prev;
           return prev.map((tap) => {
             if (tap.id !== updatedTap.id) return tap;
-            // Merge updated tap fields, keep beer and pricing from cache
             const ozRemaining = updatedTap.oz_remaining;
             const lowThreshold = updatedTap.low_threshold_oz;
             let availabilityStatus: TapWithBeer['availability_status'] =
@@ -296,18 +432,28 @@ export default function VenueDetailScreen() {
   const headerAnimatedStyle = useAnimatedStyle(() => {
     const height = interpolate(
       scrollY.value,
-      [0, 80],
+      [0, 120],
       [HEADER_HEIGHT_EXPANDED, HEADER_HEIGHT_COLLAPSED],
       Extrapolation.CLAMP,
     );
     return { height };
   });
 
+  const heroImageOpacity = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      scrollY.value,
+      [0, 80],
+      [1, 0],
+      Extrapolation.CLAMP,
+    );
+    return { opacity };
+  });
+
   const titleAnimatedStyle = useAnimatedStyle(() => {
     const fontSize = interpolate(
       scrollY.value,
-      [0, 80],
-      [24, 18],
+      [0, 120],
+      [22, 17],
       Extrapolation.CLAMP,
     );
     return { fontSize };
@@ -316,20 +462,19 @@ export default function VenueDetailScreen() {
   const subtitleAnimatedStyle = useAnimatedStyle(() => {
     const opacity = interpolate(
       scrollY.value,
-      [0, 50],
+      [0, 60],
       [1, 0],
       Extrapolation.CLAMP,
     );
     const height = interpolate(
       scrollY.value,
-      [0, 50],
+      [0, 60],
       [20, 0],
       Extrapolation.CLAMP,
     );
     return { opacity, height };
   });
 
-  const venue = venueQuery.data;
   const taps = useMemo(() => tapsQuery.data ?? [], [tapsQuery.data]);
 
   const isLoading = venueQuery.isLoading || tapsQuery.isLoading;
@@ -353,38 +498,73 @@ export default function VenueDetailScreen() {
   const keyExtractor = useCallback((item: TapWithBeer) => item.id, []);
 
   return (
-    <View className="flex-1 bg-dark" style={{ paddingTop: insets.top }}>
-      {/* Collapsible header */}
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
+      {/* Collapsible header with venue hero image */}
       <Animated.View
         entering={FadeIn.duration(350)}
-        style={headerAnimatedStyle}
-        className="px-4 justify-end pb-3 overflow-hidden"
+        style={[headerAnimatedStyle, styles.headerContainer]}
       >
-        <View className="flex-row items-center justify-between">
-          <View className="flex-1 mr-3">
-            <Animated.Text
-              className="font-bold text-white"
-              style={titleAnimatedStyle}
-              numberOfLines={1}
-            >
-              {venue?.name ?? 'Loading...'}
-            </Animated.Text>
-            <Animated.Text
-              className="text-sm text-white/50 mt-0.5"
-              style={subtitleAnimatedStyle}
-              numberOfLines={1}
-            >
-              {venue?.address ?? ''}
-            </Animated.Text>
+        {/* Hero image background */}
+        <Animated.View style={[StyleSheet.absoluteFill, heroImageOpacity]}>
+          <Image
+            source={{ uri: venueImageUrl }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+          />
+          <LinearGradient
+            colors={[
+              'rgba(8,8,15,0.3)',
+              'rgba(8,8,15,0.7)',
+              'rgba(8,8,15,0.95)',
+            ]}
+            locations={[0, 0.5, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+
+        {/* Glass overlay for collapsed state */}
+        <View style={[StyleSheet.absoluteFill, styles.headerGlassOverlay]} />
+
+        <View style={styles.headerContent}>
+          <View style={styles.headerTitleRow}>
+            <View style={styles.headerTitleText}>
+              <Animated.Text
+                style={[
+                  typography.title,
+                  { color: colors.text.primary },
+                  titleAnimatedStyle,
+                ]}
+                numberOfLines={1}
+              >
+                {venue?.name ?? 'Loading...'}
+              </Animated.Text>
+              <Animated.View
+                style={[styles.subtitleRow, subtitleAnimatedStyle]}
+              >
+                <MapPin
+                  size={12}
+                  color={colors.text.secondary}
+                  strokeWidth={2}
+                />
+                <Text
+                  style={[
+                    typography.caption,
+                    { color: colors.text.secondary, marginLeft: 4, flex: 1 },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {venue?.address ?? ''}
+                </Text>
+              </Animated.View>
+            </View>
+            <GoldButton
+              label="Change venue"
+              variant="secondary"
+              onPress={() => router.back()}
+              fullWidth={false}
+              style={styles.changeVenueButton}
+            />
           </View>
-          <Pressable
-            onPress={() => router.back()}
-            className="bg-dark-600 rounded-full px-4 py-2 active:opacity-70"
-          >
-            <Text className="text-sm font-semibold text-brand">
-              Change venue
-            </Text>
-          </Pressable>
         </View>
       </Animated.View>
 
@@ -392,24 +572,64 @@ export default function VenueDetailScreen() {
       {isFarFromVenue && (
         <Animated.View
           entering={FadeIn.duration(300)}
-          className="mx-4 mb-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-2.5"
+          style={styles.warningWrapper}
         >
-          <Text className="text-sm text-yellow-400/80 text-center">
-            You&apos;re not at this venue
-          </Text>
+          <GlassCard style={styles.warningCard}>
+            <View style={styles.warningContent}>
+              <AlertTriangle
+                size={18}
+                color={colors.status.warning}
+                strokeWidth={2}
+              />
+              <Text
+                style={[
+                  typography.caption,
+                  {
+                    color: colors.status.warning,
+                    marginLeft: 10,
+                    opacity: 0.9,
+                  },
+                ]}
+              >
+                You&apos;re not at this venue
+              </Text>
+            </View>
+          </GlassCard>
         </Animated.View>
       )}
 
       {/* Content */}
       {isLoading ? (
-        <SkeletonLoader type="beer" count={4} />
+        <ShimmerLoader type="beer" count={4} />
       ) : venueQuery.isError || tapsQuery.isError ? (
-        <View className="flex-1 items-center justify-center px-8">
-          <Text className="text-3xl mb-3">{'\u26A0\uFE0F'}</Text>
-          <Text className="text-white/70 text-base text-center">
+        <View style={styles.centeredContainer}>
+          <AlertTriangle
+            size={36}
+            color={colors.status.warning}
+            strokeWidth={1.5}
+          />
+          <Text
+            style={[
+              typography.body,
+              {
+                color: colors.text.secondary,
+                textAlign: 'center',
+                marginTop: 12,
+              },
+            ]}
+          >
             {formatErrorMessage(venueQuery.error ?? tapsQuery.error)}
           </Text>
-          <Text className="text-white/40 text-sm text-center mt-2">
+          <Text
+            style={[
+              typography.caption,
+              {
+                color: colors.text.tertiary,
+                textAlign: 'center',
+                marginTop: 8,
+              },
+            ]}
+          >
             Pull down to try again
           </Text>
         </View>
@@ -418,17 +638,17 @@ export default function VenueDetailScreen() {
           data={taps}
           renderItem={renderBeerCard}
           keyExtractor={keyExtractor}
+          ListHeaderComponent={<SectionHeader count={taps.length} />}
           contentContainerStyle={{
-            paddingTop: 4,
-            paddingBottom: insets.bottom + 24,
+            paddingBottom: insets.bottom + 80,
             ...(taps.length === 0 && { flexGrow: 1 }),
           }}
           refreshControl={
             <RefreshControl
               refreshing={tapsQuery.isFetching && !tapsQuery.isLoading}
               onRefresh={onRefresh}
-              tintColor="#f59e0b"
-              colors={['#f59e0b']}
+              tintColor={colors.gold[500]}
+              colors={[colors.gold[500]]}
             />
           }
           onScroll={(e) => {
@@ -437,9 +657,22 @@ export default function VenueDetailScreen() {
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <View className="flex-1 items-center justify-center px-8">
-              <Text className="text-3xl mb-3">{'\uD83C\uDF7A'}</Text>
-              <Text className="text-white/70 text-base text-center">
+            <View style={styles.centeredContainer}>
+              <Beer
+                size={36}
+                color={colors.text.tertiary}
+                strokeWidth={1.5}
+              />
+              <Text
+                style={[
+                  typography.body,
+                  {
+                    color: colors.text.secondary,
+                    textAlign: 'center',
+                    marginTop: 12,
+                  },
+                ]}
+              >
                 No beers on tap right now. Check back soon!
               </Text>
             </View>
@@ -449,3 +682,141 @@ export default function VenueDetailScreen() {
     </View>
   );
 }
+
+// ---------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.bg.primary,
+  },
+  headerContainer: {
+    overflow: 'hidden',
+  },
+  headerGlassOverlay: {
+    backgroundColor: 'rgba(8,8,15,0.5)',
+  },
+  headerContent: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: spacing.screenPadding,
+    paddingBottom: 14,
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  headerTitleText: {
+    flex: 1,
+    marginRight: 12,
+  },
+  subtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  changeVenueButton: {
+    height: 36,
+    paddingHorizontal: 14,
+    borderRadius: radius.lg,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: spacing.sectionGap,
+    paddingBottom: spacing.itemGap,
+  },
+  warningWrapper: {
+    marginHorizontal: spacing.screenPadding,
+    marginTop: spacing.itemGap,
+  },
+  warningCard: {
+    borderRadius: radius.lg,
+    borderColor: 'rgba(251,191,36,0.20)',
+  },
+  warningContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  beerCardWrapper: {
+    marginHorizontal: spacing.screenPadding,
+    marginBottom: spacing.itemGap,
+  },
+  disabledCard: {
+    opacity: 0.5,
+  },
+  beerCard: {
+    borderRadius: radius['2xl'],
+    backgroundColor: colors.glass.surface,
+    borderWidth: 1,
+    borderColor: colors.glass.border,
+    overflow: 'hidden',
+  },
+  beerCardInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  beerThumbnailContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    margin: 12,
+    flexShrink: 0,
+  },
+  beerThumbnail: {
+    width: 80,
+    height: 80,
+  },
+  beerDetails: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingRight: 14,
+  },
+  beerInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  beerInfoText: {
+    flex: 1,
+    marginRight: 8,
+  },
+  badgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    gap: 8,
+  },
+  orderCta: {
+    marginLeft: 'auto',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(200,162,77,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tempRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  lowStockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  centeredContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+});

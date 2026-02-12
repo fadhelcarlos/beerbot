@@ -244,14 +244,7 @@ export default function VerifyAgeScreen() {
       const message =
         err instanceof Error ? err.message : 'Failed to start verification';
 
-      if (message.includes('rate') || message.includes('429')) {
-        Alert.alert(
-          'Rate Limited',
-          'Too many verification attempts. Please try again later.',
-          [{ text: 'OK' }],
-        );
-        setScreenState('explanation');
-      } else if (message.includes('already verified') || message.includes('400')) {
+      if (message.includes('already verified')) {
         // Race condition: user got verified between check and start
         hasNavigated.current = true;
         router.replace({
@@ -259,8 +252,9 @@ export default function VerifyAgeScreen() {
           params: orderParams,
         });
       } else {
-        Alert.alert('Error', message, [{ text: 'OK' }]);
-        setScreenState('explanation');
+        // Show user-friendly error with a failure screen instead of raw Alert
+        setFailureReason(message);
+        setScreenState('failed');
       }
     }
   }, [attempts, router, orderParams]);
@@ -666,11 +660,8 @@ const styles = StyleSheet.create({
   successIconCircle: {
     width: 72,
     height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(200,162,77,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadows.glow,
   },
   failedIconCircle: {
     width: 72,
@@ -683,12 +674,9 @@ const styles = StyleSheet.create({
   shieldIconCircle: {
     width: 96,
     height: 96,
-    borderRadius: 48,
-    backgroundColor: 'rgba(200,162,77,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 32,
-    ...shadows.glowSubtle,
   },
   explanationContent: {
     flex: 1,

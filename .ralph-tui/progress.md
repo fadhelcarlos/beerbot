@@ -15,6 +15,9 @@ after each iteration and it's included in prompts for context.
 - **Database**: Supabase migrations in `supabase/migrations/`, seed data in `supabase/seed.sql`. Custom enums: `tap_status`, `order_status`. Auto-updated `updated_at` via trigger function.
 - **Deep link scheme**: `beerbot://` (configured in `app.json`)
 - **Path aliases**: `@/*` maps to project root via `tsconfig.json` `paths`
+- **Supabase client**: `lib/supabase.ts` — uses `expo-secure-store` for session storage, env vars `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- **Auth store**: `lib/stores/auth-store.ts` — Zustand store with Supabase session/user, `initialize()` returns cleanup function for auth listener
+- **RLS pattern**: Public tables (venues, beers, taps, tap_pricing) use `TO anon, authenticated` SELECT. User-owned data (orders, order_events) filters by `auth.uid()`. Admin tables (admin_pour_logs) have no app-user policies — service_role only.
 
 ---
 
@@ -86,5 +89,35 @@ after each iteration and it's included in prompts for context.
   - Using deterministic UUIDs in seed data (e.g., `00000000-0000-0000-0000-000000000001`) makes cross-referencing FKs in seed files easy and reproducible
   - Supabase convention: migrations in `supabase/migrations/` with timestamp prefix, seed data in `supabase/seed.sql`
   - The `types/api.ts` TypeScript types already match the database schema 1:1 (established in US-001)
+---
+
+## 2026-02-11 - US-003
+- What was implemented:
+  - New migration `supabase/migrations/20260211100000_auth_rls.sql` with:
+    - `handle_new_user()` trigger function (SECURITY DEFINER) that auto-creates a `users` row on `auth.users` INSERT, mapping `id`, `email`, and optional `full_name` from `raw_user_meta_data`
+    - RLS enabled on ALL 8 tables (users, venues, beers, taps, tap_pricing, orders, order_events, admin_pour_logs)
+    - `users`: SELECT/UPDATE own row only (`id = auth.uid()`)
+    - `venues`, `beers`, `taps`, `tap_pricing`: publicly readable (`TO anon, authenticated`)
+    - `orders`: SELECT/INSERT by owning user (`user_id = auth.uid()`)
+    - `order_events`: SELECT by order owner via EXISTS subquery join to orders
+    - `admin_pour_logs`: no app-user policies — only accessible via service_role key (bypasses RLS)
+  - Installed `@supabase/supabase-js` and `react-native-url-polyfill`
+  - Created `lib/supabase.ts` — Supabase client configured with `expo-secure-store` adapter for auth token persistence, env vars for URL/key
+  - Updated `lib/stores/auth-store.ts` — Zustand store now integrates with Supabase auth (session, user, onAuthStateChange listener, initialize/cleanup pattern)
+  - Created `.env.example` documenting required env vars
+  - `npx tsc --noEmit` passes
+  - `npx expo lint` passes
+- Files changed:
+  - `supabase/migrations/20260211100000_auth_rls.sql` — RLS migration (new)
+  - `lib/supabase.ts` — Supabase client config (new)
+  - `lib/stores/auth-store.ts` — updated with Supabase session integration
+  - `package.json` — added `@supabase/supabase-js`, `react-native-url-polyfill`
+  - `.env.example` — env var documentation (new)
+- **Learnings:**
+  - Supabase `handle_new_user()` must be `SECURITY DEFINER` to write to `public.users` from an `auth.users` trigger context
+  - `react-native-url-polyfill` is still needed with `@supabase/supabase-js` v2 on React Native
+  - For `admin_pour_logs`, enabling RLS with no policies effectively restricts to service_role only (which bypasses RLS)
+  - Expo uses `EXPO_PUBLIC_` prefix for client-accessible env vars (equivalent to `NEXT_PUBLIC_` in Next.js)
+  - `expo-secure-store` works as a drop-in Supabase auth storage adapter with `getItemAsync`/`setItemAsync`/`deleteItemAsync`
 ---
 
